@@ -99,6 +99,7 @@ export interface DocMeta {
 
 export interface DocumentSummary {
   id: string;
+  workspaceId?: string;
   meta: DocMeta;
   createdAt: string;
   sourceType?: DocumentSourceType;
@@ -120,12 +121,22 @@ export type ScheduleCategory = "업무" | "회의" | "리뷰" | "출장" | "휴�
 
 export interface Schedule {
   id: string;
+  workspaceId?: string;
   title: string;
   startDate: string;   // YYYY-MM-DD
   endDate: string;     // YYYY-MM-DD (same as startDate for single-day)
   category: ScheduleCategory;
   color?: string;
   note?: string;
+  createdAt: string;
+}
+
+export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
+
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  role: WorkspaceRole;
   createdAt: string;
 }
 

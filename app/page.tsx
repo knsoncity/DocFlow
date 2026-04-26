@@ -1,4 +1,6 @@
 "use client";
+import type { User } from "@supabase/supabase-js";
+import type { FormEvent } from "react";
 import {
   useCallback,
   useDeferredValue,
@@ -15,7 +17,14 @@ import DocModal from "./components/DocModal";
 import GraphView from "./components/GraphView";
 import TimelineView from "./components/TimelineView";
 import { ToastContainer, ToastItem, ToastType } from "./components/Toast";
-import { DeliveryHealth, Document, DocumentCategory, DocumentSummary, Schedule } from "./types";
+import {
+  DeliveryHealth,
+  Document,
+  DocumentCategory,
+  DocumentSummary,
+  Schedule,
+  WorkspaceSummary,
+} from "./types";
 import {
   getDday,
   getDueDateTimestamp,
@@ -38,6 +47,7 @@ import {
   getDocumentTypeLabel,
 } from "../lib/document-taxonomy";
 import { getPolicyBadgeLabel, getPolicyPanelSummary } from "../lib/policy-tracking";
+import { supabaseClient } from "../lib/supabase-client";
 
 type Tab = "list" | "graph" | "timeline";
 type SortMode = "latest" | "dueDate" | "dday";
@@ -59,6 +69,7 @@ const AUTHOR_STORAGE_KEY = "docflow.authorName";
 const AUTHOR_CHANGE_EVENT = "docflow-author-change";
 const THEME_STORAGE_KEY = "docflow.themePreference";
 const CHAT_PANE_WIDTH_STORAGE_KEY = "docflow.chatPaneWidth";
+const WORKSPACE_STORAGE_KEY = "docflow.workspaceId";
 const SERVICE_FALLBACK = "미분류";
 const MIN_CHAT_PANE_WIDTH = 340;
 const MAX_CHAT_PANE_WIDTH = 680;
@@ -139,6 +150,88 @@ const SAVED_VIEW_PRESETS: SavedViewPreset[] = [
 function getStoredAuthorName() {
   if (typeof window === "undefined") return "";
   return window.localStorage.getItem(AUTHOR_STORAGE_KEY)?.trim() ?? "";
+}
+
+function getStoredWorkspaceId() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(WORKSPACE_STORAGE_KEY)?.trim() ?? "";
+}
+
+function getClientAuthDisplayName(user: User | null) {
+  if (!user) return "";
+  const metadata = user.user_metadata as {
+    name?: string;
+    full_name?: string;
+    preferred_username?: string;
+  };
+
+  return (
+    metadata.full_name?.trim() ||
+    metadata.name?.trim() ||
+    metadata.preferred_username?.trim() ||
+    user.email?.trim() ||
+    ""
+  );
+}
+
+function AuthGate({
+  email,
+  notice,
+  submitting,
+  onEmailChange,
+  onSubmit,
+}: {
+  email: string;
+  notice: string;
+  submitting: boolean;
+  onEmailChange: (email: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <main className="flex min-h-[100dvh] items-center justify-center bg-[var(--bg-subtle)] px-4 py-10 font-sans">
+      <section className="w-full max-w-[440px] overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--bg)] shadow-[var(--shadow-float)]">
+        <div className="border-b border-[var(--border)] px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[var(--text)] text-[13px] font-semibold text-[var(--bg)]">
+              D
+            </div>
+            <div>
+              <h1 className="text-[16px] font-semibold tracking-[-0.025em] text-[var(--text)]">DocFlow</h1>
+              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Private workspace</p>
+            </div>
+          </div>
+          <p className="mt-5 text-[13px] leading-[1.7] tracking-[-0.01em] text-[var(--text-subtle)]">
+            여러 사용자가 같은 MVP를 검증할 수 있도록 이메일 로그인 후 작업 공간에 진입합니다.
+          </p>
+        </div>
+        <form onSubmit={onSubmit} className="space-y-4 px-6 py-5">
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-subtle)]">이메일</span>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="name@company.com"
+              className="w-full rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-[12px] bg-[var(--text)] px-4 py-2.5 text-[13px] font-semibold text-[var(--bg)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          >
+            {submitting ? "로그인 링크 전송 중" : "이메일 로그인 링크 받기"}
+          </button>
+          {notice && (
+            <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-[11.5px] leading-[1.6] text-[var(--text-subtle)]">
+              {notice}
+            </p>
+          )}
+        </form>
+      </section>
+    </main>
+  );
 }
 
 function getStoredThemePreference(): ThemePreference {
@@ -292,6 +385,16 @@ export default function Home() {
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authorDraft, setAuthorDraft] = useState("");
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authAccessToken, setAuthAccessToken] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(getStoredWorkspaceId);
+  const [workspaceDraft, setWorkspaceDraft] = useState("");
+  const [workspaceCreating, setWorkspaceCreating] = useState(false);
   const [themePreference, setThemePreference] = useState<ThemePreference>(getStoredThemePreference);
   const [themeDraft, setThemeDraft] = useState<ThemePreference>(getStoredThemePreference);
   const [chatPaneWidth, setChatPaneWidth] = useState(440);
@@ -306,6 +409,8 @@ export default function Home() {
   const isMobileViewport = useSyncExternalStore(subscribeToMobileViewport, getIsMobileViewport, () => false);
   const settingsTitleId = useId();
   const chatResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const authDisplayName = getClientAuthDisplayName(authUser);
+  const effectiveAuthorName = authDisplayName || authorName;
 
   const showToast = useCallback((type: ToastType, message: string) => {
     const id = Math.random().toString(36).slice(2);
@@ -316,13 +421,90 @@ export default function Home() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const buildAuthHeaders = useCallback(
+    (headers: Record<string, string> = {}) =>
+      ({
+        ...headers,
+        ...(authAccessToken ? { Authorization: `Bearer ${authAccessToken}` } : {}),
+        ...(selectedWorkspaceId ? { "x-docflow-workspace-id": selectedWorkspaceId } : {}),
+      }),
+    [authAccessToken, selectedWorkspaceId]
+  );
+
   useEffect(() => {
-    fetch("/api/documents")
-      .then((r) => r.json())
+    let active = true;
+
+    supabaseClient.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active) return;
+        setAuthUser(data.session?.user ?? null);
+        setAuthAccessToken(data.session?.access_token ?? null);
+      })
+      .catch((error) => {
+        console.error(error);
+        if (active) setAuthNotice("로그인 상태를 확인하지 못했습니다. 다시 시도해주세요.");
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+
+    const { data } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+      setAuthAccessToken(session?.access_token ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!authUser || !authAccessToken) return;
+
+    fetch("/api/workspaces", {
+      headers: { Authorization: `Bearer ${authAccessToken}` },
+      cache: "no-store",
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("워크스페이스 목록을 불러오지 못했습니다.");
+        return r.json() as Promise<{ workspaces?: WorkspaceSummary[] }>;
+      })
+      .then((data) => {
+        const items = data.workspaces ?? [];
+        setWorkspaces(items);
+        const storedWorkspaceId = getStoredWorkspaceId();
+        const nextWorkspaceId =
+          (storedWorkspaceId && items.some((workspace) => workspace.id === storedWorkspaceId)
+            ? storedWorkspaceId
+            : items[0]?.id) ?? "";
+        setSelectedWorkspaceId(nextWorkspaceId);
+        if (nextWorkspaceId) {
+          window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        showToast("error", "워크스페이스 목록을 불러오지 못했습니다.");
+      });
+  }, [authAccessToken, authLoading, authUser, showToast]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!authUser || !selectedWorkspaceId) return;
+
+    fetch("/api/documents", { headers: buildAuthHeaders(), cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error("문서 목록을 불러오지 못했습니다.");
+        return r.json() as Promise<DocumentSummary[]>;
+      })
       .then(setDocs)
       .catch(() => showToast("error", "문서 목록을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
-  }, [showToast]);
+  }, [authLoading, authUser, selectedWorkspaceId, buildAuthHeaders, showToast]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -402,7 +584,10 @@ export default function Home() {
     setSelectedDocLoading(true);
     if (isMobileViewport) setMobileSurface("workspace");
     try {
-      const res = await fetch(`/api/documents/${doc.id}`, { cache: "no-store" });
+      const res = await fetch(`/api/documents/${doc.id}`, {
+        cache: "no-store",
+        headers: buildAuthHeaders(),
+      });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(data?.error ?? "문서 상세 조회에 실패했습니다.");
@@ -448,7 +633,7 @@ export default function Home() {
     try {
       const res = await fetch(`/api/documents/${docId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(updates),
       });
       if (!res.ok) {
@@ -474,7 +659,10 @@ export default function Home() {
     setConfirmDelete(null);
     setDeletingDocId(doc.id);
     try {
-      const res = await fetch(`/api/documents/${doc.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/documents/${doc.id}`, {
+        method: "DELETE",
+        headers: buildAuthHeaders(),
+      });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(data?.error ?? "문서 삭제에 실패했습니다.");
@@ -501,7 +689,81 @@ export default function Home() {
     showToast("success", "환경설정이 저장됐습니다.");
   };
 
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const email = authEmail.trim();
+    if (!email) return;
+
+    setAuthSubmitting(true);
+    setAuthNotice("");
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
+    });
+    setAuthSubmitting(false);
+    setAuthNotice(
+      error
+        ? `로그인 링크 전송에 실패했습니다. ${error.message}`
+        : "이메일로 로그인 링크를 보냈습니다. 메일함에서 링크를 열면 DocFlow에 접속됩니다."
+    );
+  };
+
+  const handleSignOut = async () => {
+    await supabaseClient.auth.signOut();
+    setDocs([]);
+    setWorkspaces([]);
+    setSelectedWorkspaceId("");
+    setSelectedDoc(null);
+    setSelectedDocId(null);
+    setNewSchedules([]);
+    showToast("success", "로그아웃됐습니다.");
+  };
+
+  const handleWorkspaceChange = (workspaceId: string) => {
+    setSelectedWorkspaceId(workspaceId);
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
+    setDocs([]);
+    setNewSchedules([]);
+    setSelectedDoc(null);
+    setSelectedDocId(null);
+    setLoading(true);
+  };
+
+  const handleCreateWorkspace = async () => {
+    const name = workspaceDraft.trim();
+    if (!name || workspaceCreating) return;
+
+    setWorkspaceCreating(true);
+    try {
+      const res = await fetch("/api/workspaces", {
+        method: "POST",
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ name }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        workspace?: WorkspaceSummary;
+        error?: string;
+      } | null;
+      if (!res.ok || !data?.workspace) {
+        throw new Error(data?.error ?? "워크스페이스 생성에 실패했습니다.");
+      }
+
+      setWorkspaces((prev) => [...prev, data.workspace!]);
+      setWorkspaceDraft("");
+      handleWorkspaceChange(data.workspace.id);
+      showToast("success", "워크스페이스가 생성됐습니다.");
+    } catch (error) {
+      showToast("error", error instanceof Error ? error.message : "워크스페이스 생성 중 오류가 발생했습니다.");
+    } finally {
+      setWorkspaceCreating(false);
+    }
+  };
+
   const serviceCount = new Set(docs.map((d) => d.meta.serviceName).filter(Boolean)).size;
+  const activeWorkspace =
+    workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0] ?? null;
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
   const searchedDocs = docs.filter((doc) => {
     if (!normalizedSearchQuery) return true;
@@ -520,9 +782,9 @@ export default function Home() {
   });
   const completedCount = searchedDocs.filter((doc) => resolveProgressState(doc.meta) === "완료").length;
   const referenceCount = searchedDocs.filter((doc) => !doc.meta.isDocument).length;
-  const mineDocsCount = authorName ? searchedDocs.filter((doc) => doc.meta.author?.trim() === authorName).length : 0;
+  const mineDocsCount = effectiveAuthorName ? searchedDocs.filter((doc) => doc.meta.author?.trim() === effectiveAuthorName).length : 0;
   const toggleFilteredDocs = searchedDocs.filter((doc) => {
-    if (showMineOnly && doc.meta.author?.trim() !== authorName) return false;
+    if (showMineOnly && doc.meta.author?.trim() !== effectiveAuthorName) return false;
     if (hideCompleted && resolveProgressState(doc.meta) === "완료") return false;
     if (hideReferences && !doc.meta.isDocument) return false;
     return true;
@@ -568,7 +830,7 @@ export default function Home() {
     SAVED_VIEW_PRESETS.find((preset) => preset.id === activeSavedView)?.label ?? "사용 안 함";
   const countDocumentsForPreset = (preset: SavedViewPreset) =>
     searchedDocs.filter((doc) => {
-      if (showMineOnly && doc.meta.author?.trim() !== authorName) return false;
+      if (showMineOnly && doc.meta.author?.trim() !== effectiveAuthorName) return false;
       if (preset.hideCompleted && resolveProgressState(doc.meta) === "완료") return false;
       if (preset.hideReferences && !doc.meta.isDocument) return false;
       if (preset.category !== "all" && getDocumentCategory(doc) !== preset.category) return false;
@@ -614,10 +876,10 @@ export default function Home() {
   const setAllServicesCollapsed = (collapsed: boolean) => setCollapsedServices(Object.fromEntries(serviceGroups.map((g) => [g.key, collapsed])));
 
   const filterBtnClass = (active: boolean) =>
-    `rounded-[10px] border px-3 py-1.5 text-[10.5px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+    `rounded-[9px] border px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
       active
         ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
-        : "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-subtle)] hover:text-[var(--text)]"
+        : "border-[var(--border)] bg-[var(--bg)] text-[var(--text-subtle)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
     }`;
 
   const confirmDocTitle = confirmDelete
@@ -647,6 +909,26 @@ export default function Home() {
   const desktopChatPaneWidth = isHydrated ? clampChatPaneWidth(chatPaneWidth) : 440;
   const showMobileChat = effectiveIsMobileViewport && mobileSurface === "chat";
   const showMobileWorkspace = effectiveIsMobileViewport && mobileSurface === "workspace";
+
+  if (authLoading) {
+    return (
+      <main className="flex min-h-[100dvh] items-center justify-center bg-[var(--bg-subtle)] font-sans text-[13px] text-[var(--text-muted)]">
+        세션을 확인하는 중…
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <AuthGate
+        email={authEmail}
+        notice={authNotice}
+        submitting={authSubmitting}
+        onEmailChange={setAuthEmail}
+        onSubmit={handleAuthSubmit}
+      />
+    );
+  }
 
   return (
     <div
@@ -690,10 +972,66 @@ export default function Home() {
               설정
             </button>
           </div>
+          <div className="mt-3 rounded-[14px] border border-[var(--border)] bg-[var(--bg-subtle)] p-2">
+            <div className="grid gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                  워크스페이스
+                </span>
+                <select
+                  value={selectedWorkspaceId}
+                  onChange={(event) => handleWorkspaceChange(event.target.value)}
+                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[11.5px] font-medium tracking-[-0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-label="워크스페이스 선택"
+                >
+                  {workspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
+                <input
+                  type="text"
+                  value={workspaceDraft}
+                  onChange={(event) => setWorkspaceDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleCreateWorkspace();
+                    }
+                  }}
+                  placeholder="새 워크스페이스"
+                  className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[11px] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleCreateWorkspace()}
+                  disabled={!workspaceDraft.trim() || workspaceCreating}
+                  className="rounded-[10px] border border-[var(--border-strong)] bg-[var(--text)] px-2.5 py-1.5 text-[10.5px] font-semibold text-[var(--bg)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  생성
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             <span className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
-              {authorName || "작성자 미설정"}
+              {effectiveAuthorName || "작성자 미설정"}
             </span>
+            {activeWorkspace && (
+              <span className="inline-flex max-w-full items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
+                <span className="truncate">{activeWorkspace.name}</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              로그아웃
+            </button>
             <span className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
               문서 {docs.length}개
             </span>
@@ -709,9 +1047,11 @@ export default function Home() {
             onDocDeleted={applyDeletedDoc}
             onScheduleAdded={(s) => {
               setNewSchedules((prev) => [...prev, s]);
-              showToast("success", `📅 "${s.title}" 일정이 등록됐습니다.`);
+              showToast("success", `"${s.title}" 일정이 등록됐습니다.`);
             }}
-            authorName={authorName}
+            authorName={effectiveAuthorName}
+            accessToken={authAccessToken ?? undefined}
+            workspaceId={selectedWorkspaceId}
           />
         </div>
       </aside>
@@ -790,9 +1130,9 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <section className="space-y-3 rounded-[16px] border border-[var(--border)] bg-[var(--bg-elevated)] px-3.5 py-3.5 lg:px-4">
+                  <section className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 lg:px-3.5">
                     <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                      <div className="grid min-w-0 gap-2">
+                      <div className="grid min-w-0 gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                         <label className="relative min-w-0 w-full">
                           <span className="sr-only">문서 검색</span>
                           <svg aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -804,21 +1144,20 @@ export default function Home() {
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="문서, 서비스, 작성자, 키워드 검색"
-                            className="w-full rounded-[12px] border border-[var(--border)] bg-[var(--bg)] py-2.5 pl-8 pr-3 text-[12px] tracking-[-0.01em] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] py-2 pl-8 pr-3 text-[11.5px] tracking-[-0.01em] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                           />
                         </label>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
-                          <span className="font-medium text-blue-500">표시 {visibleDocs.length}</span>
-                          <span aria-hidden="true" className="text-[var(--text-muted)]">/</span>
-                          <span>전체 {docs.length}</span>
+                        <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-[10px] tracking-[0.01em] text-[var(--text-subtle)]">
+                          <span className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2 py-1 font-medium text-[var(--text)]">표시 {visibleDocs.length}</span>
+                          <span className="text-[var(--text-muted)]">전체 {docs.length}</span>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-                        <div className="flex items-center gap-0.5 rounded-[12px] border border-[var(--border)] bg-[var(--bg)] p-0.5">
+                      <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+                        <div className="flex items-center gap-0.5 rounded-[10px] border border-[var(--border)] bg-[var(--bg)] p-0.5">
                           {([{ value: "card", label: "카드" }, { value: "compact", label: "리스트" }] as const).map((o) => (
                             <button key={o.value} type="button" onClick={() => setViewMode(o.value)}
-                              className={`rounded-[10px] px-2.5 py-1.5 text-[10.5px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                              className={`rounded-[8px] px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                                 viewMode === o.value ? "bg-[var(--bg-surface)] text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"
                               }`}
                             >{o.label}</button>
@@ -828,7 +1167,7 @@ export default function Home() {
                           value={sortMode}
                           onChange={(e) => setSortMode(e.target.value as SortMode)}
                           aria-label="정렬 기준"
-                          className="rounded-[12px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2.5 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          className="rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[10px] tracking-[0.01em] text-[var(--text-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                         >
                           <option value="latest">최신순</option>
                           <option value="dueDate">일정순</option>
@@ -837,7 +1176,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="border-t border-[var(--border)] pt-2.5">
+                    <div className="border-t border-[var(--border)] pt-2">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {CATEGORY_ORDER.map((category) => {
                           const style = CATEGORY_STYLES[category];
@@ -850,7 +1189,7 @@ export default function Home() {
                                 setCategoryFilter(category);
                                 setDetailFilter("all");
                               }}
-                              className="rounded-[10px] border px-3 py-1.5 text-[10.5px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              className="rounded-[9px] border px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                               style={{
                                 borderColor: style.stroke,
                                 backgroundColor: active ? style.accent : style.soft,
@@ -874,15 +1213,15 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="border-t border-[var(--border)] pt-2.5">
+                    <div className="border-t border-[var(--border)] pt-1.5">
                       <button
                         type="button"
                         onClick={() => setFiltersExpanded((prev) => !prev)}
-                        className="flex w-full items-center justify-between gap-3 rounded-[12px] px-1 py-1 text-left transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="flex w-full items-center justify-between gap-3 rounded-[10px] px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       >
                         <div className="min-w-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">보기 옵션</p>
-                          <p className="mt-0.5 truncate text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
+                          <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">보기 옵션</p>
+                          <p className="mt-0.5 truncate text-[10px] tracking-[0.01em] text-[var(--text-subtle)]">
                             {activeSavedViewLabel} · {activeDetailFilter === "all" ? "세부 유형 전체" : activeDetailFilter} · {activeHealthLabel}
                           </p>
                         </div>
@@ -899,10 +1238,10 @@ export default function Home() {
                       </button>
 
                       {filtersExpanded && (
-                        <div className="mt-3 space-y-3 border-t border-[var(--border)] pt-3">
+                        <div className="mt-2.5 space-y-2.5 border-t border-[var(--border)] pt-2.5">
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">저장된 보기</p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
+                            <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">저장된 보기</p>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
                               {SAVED_VIEW_PRESETS.map((preset) => {
                                 const category =
                                   preset.category === "all" ? null : CATEGORY_STYLES[preset.category];
@@ -912,7 +1251,7 @@ export default function Home() {
                                     key={preset.id}
                                     type="button"
                                     onClick={() => applySavedView(preset)}
-                                    className="inline-flex items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-[10.5px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                    className="inline-flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                     style={{
                                       borderColor: category ? category.stroke : "var(--border)",
                                       backgroundColor: active ? category?.accent ?? "var(--text)" : "var(--bg)",
@@ -920,7 +1259,7 @@ export default function Home() {
                                     }}
                                   >
                                     <span>{preset.label}</span>
-                                      <span className={`text-[10px] tracking-[0.01em] ${active ? "text-white/80" : "text-[var(--text-muted)]"}`}>
+                                      <span className={`text-[9.5px] tracking-[0.01em] ${active ? "text-white/80" : "text-[var(--text-muted)]"}`}>
                                         {countDocumentsForPreset(preset)}
                                       </span>
                                     </button>
@@ -930,15 +1269,15 @@ export default function Home() {
                           </div>
 
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">기타 옵션</p>
-                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                              <label className="min-w-[180px]">
+                            <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">기타 옵션</p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <label className="min-w-[168px]">
                                 <span className="sr-only">세부 유형 선택</span>
                                 <select
                                   value={activeDetailFilter}
                                   onChange={(e) => setDetailFilter(e.target.value)}
                                   aria-label="세부 유형 선택"
-                                  className="w-full rounded-[12px] border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-[11px] tracking-[0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[10px] tracking-[0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                 >
                                   <option value="all">세부 유형 전체 {categoryScopedDocs.length}</option>
                                   {detailOptions.map((type) => (
@@ -948,13 +1287,13 @@ export default function Home() {
                                   ))}
                                 </select>
                               </label>
-                              <label className="min-w-[160px]">
+                              <label className="min-w-[148px]">
                                 <span className="sr-only">상태 선택</span>
                                 <select
                                   value={healthFilter}
                                   onChange={(e) => setHealthFilter(e.target.value as DeliveryHealth | "all")}
                                   aria-label="상태 선택"
-                                  className="w-full rounded-[12px] border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-[11px] tracking-[0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[10px] tracking-[0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                 >
                                   <option value="all">상태 전체 {detailScopedDocs.length}</option>
                                   {(["red", "yellow", "green", "gray"] as const).map((value) => (
@@ -964,7 +1303,7 @@ export default function Home() {
                                   ))}
                                 </select>
                               </label>
-                              <button type="button" onClick={() => setShowMineOnly((p) => !p)} disabled={!authorName}
+                              <button type="button" onClick={() => setShowMineOnly((p) => !p)} disabled={!effectiveAuthorName}
                                 className={filterBtnClass(showMineOnly)}
                               >내 문서 {mineDocsCount}</button>
                               <button type="button" onClick={() => setHideCompleted((p) => !p)}
@@ -974,10 +1313,10 @@ export default function Home() {
                                 className={filterBtnClass(hideReferences)}
                               >참고자료 숨기기 {referenceCount}</button>
                               <button type="button" onClick={() => setAllServicesCollapsed(true)}
-                                className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-[11px] text-[var(--text-subtle)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                               >전체 접기</button>
                               <button type="button" onClick={() => setAllServicesCollapsed(false)}
-                                className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-[11px] text-[var(--text-subtle)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                               >전체 펼치기</button>
                               {(activeCategoryFilter !== "all" || activeDetailFilter !== "all") && (
                                 <button
@@ -986,7 +1325,7 @@ export default function Home() {
                                     setCategoryFilter("all");
                                     setDetailFilter("all");
                                   }}
-                                  className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-[11px] text-[var(--text-subtle)] transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                 >
                                   분류 초기화
                                 </button>
@@ -1056,7 +1395,7 @@ export default function Home() {
                             </div>
                             {!isCollapsed && (
                               viewMode === "card" ? (
-                                <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),1fr))] gap-3 p-3">
                                   {group.docs.map((doc) => (
                                     <DocCard key={doc.id} doc={doc} onClick={() => void openDocument(doc)} />
                                   ))}
@@ -1084,7 +1423,12 @@ export default function Home() {
             </div>
           ) : tab === "graph" ? (
             <div className="h-full overflow-hidden rounded-[16px] border border-[var(--border)] bg-[var(--bg-subtle)]">
-              <GraphView docs={docs} onOpenDoc={(doc) => void openDocument(doc)} />
+              <GraphView
+                docs={docs}
+                onOpenDoc={(doc) => void openDocument(doc)}
+                accessToken={authAccessToken ?? undefined}
+                workspaceId={selectedWorkspaceId}
+              />
             </div>
           ) : (
             <div className="h-full overflow-hidden">
@@ -1092,6 +1436,8 @@ export default function Home() {
                 docs={docs}
                 onOpenDoc={(doc) => void openDocument(doc)}
                 externalSchedules={newSchedules}
+                accessToken={authAccessToken ?? undefined}
+                workspaceId={selectedWorkspaceId}
               />
             </div>
           )}
@@ -1153,7 +1499,7 @@ export default function Home() {
             className="w-full max-w-md rounded-[20px] border border-[var(--border)] bg-[var(--bg)] p-6 shadow-[var(--shadow-float)]"
           >
             <h2 id={settingsTitleId} className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--text)]">환경설정</h2>
-            <p className="mt-1 text-[12px] leading-[1.65] tracking-[-0.01em] text-[var(--text-subtle)]">테마와 기본 작성자 설정을 관리합니다.</p>
+            <p className="mt-1 text-[12px] leading-[1.65] tracking-[-0.01em] text-[var(--text-subtle)]">테마와 로그인 계정 정보를 확인합니다.</p>
             <div className="mt-5">
               <span className="mb-2 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-subtle)]">테마</span>
               <div className="grid grid-cols-3 gap-2 rounded-[14px] border border-[var(--border)] bg-[var(--bg-subtle)] p-1">
@@ -1182,14 +1528,18 @@ export default function Home() {
               </div>
             </div>
             <label className="mt-4 block">
-              <span className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-subtle)]">기본 작성자 이름</span>
+              <span className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-subtle)]">로그인 작성자</span>
               <input
                 type="text"
-                value={authorDraft}
+                value={authDisplayName || authorDraft}
                 onChange={(e) => setAuthorDraft(e.target.value)}
+                disabled={Boolean(authDisplayName)}
                 placeholder="예: 홍길동…"
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-[14px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-[14px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors disabled:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               />
+              <span className="mt-1.5 block text-[10.5px] leading-[1.55] text-[var(--text-muted)]">
+                로그인 계정 이름이 있으면 서버에서 이 값을 작성자로 사용합니다.
+              </span>
             </label>
             <div className="mt-4 flex justify-end gap-2">
               <button

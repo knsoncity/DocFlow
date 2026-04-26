@@ -62,6 +62,8 @@ const POLICY_CHANGE_STYLES = {
   },
 } as const;
 
+type DetailTabId = "review" | "raw" | "sheet" | "policy" | "history";
+
 export default function DocModal({
   doc,
   loading = false,
@@ -100,6 +102,7 @@ export default function DocModal({
   const [draftManualPolicy, setDraftManualPolicy] = useState(Boolean(doc?.meta.manualPolicy));
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [showPolicyComparison, setShowPolicyComparison] = useState(true);
+  const [activeDetailTab, setActiveDetailTab] = useState<DetailTabId>("review");
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -156,10 +159,7 @@ export default function DocModal({
   const scheduleSummary = resolveScheduleSummary(meta);
   const dday = getDday(meta);
   const changeHistory = doc.changeHistory ?? [];
-  const spreadsheetSheets =
-    doc.spreadsheetSheets?.length
-      ? doc.spreadsheetSheets
-      : parseSpreadsheetSheetsFromRawContent(doc.rawContent, doc.sourceLabel);
+  const spreadsheetSheets = resolveSpreadsheetSheetsForDetail(doc);
   const resolvedSheetIndex =
     spreadsheetSheets.length > 0
       ? Math.min(activeSheetIndex, spreadsheetSheets.length - 1)
@@ -209,6 +209,16 @@ export default function DocModal({
     { label: "유형", value: typeLabel },
     { label: "이미지", value: doc.sourceType === "image" && doc.imageCount ? `${doc.imageCount}장` : undefined },
   ].filter((item) => item.value);
+  const detailTabs = [
+    { id: "review" as const, label: "정리본" },
+    { id: "raw" as const, label: "원문" },
+    spreadsheetSheets.length > 0 ? { id: "sheet" as const, label: "시트" } : null,
+    showPolicyPanel ? { id: "policy" as const, label: "정책/영향" } : null,
+    { id: "history" as const, label: `변경 이력 ${changeHistory.length}` },
+  ].filter((tab): tab is { id: DetailTabId; label: string } => Boolean(tab));
+  const selectedDetailTab = detailTabs.some((tab) => tab.id === activeDetailTab)
+    ? activeDetailTab
+    : "review";
 
   return (
     <div
@@ -436,128 +446,541 @@ export default function DocModal({
                 </Panel>
               ) : null}
 
-              {/* History */}
-              <Panel title="변경 이력" action={
-                <span className="text-[11px] text-[var(--text-muted)]">{changeHistory.length}건</span>
+              <Panel title="상세 탭" action={
+                <span className="text-[11px] text-[var(--text-muted)]">{detailTabs.length}개</span>
               }>
-                {changeHistory.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-2.5 text-[12px] text-[var(--text-muted)]">
-                    변경 이력이 없습니다.
-                  </p>
-                ) : (
-                  <div className="max-h-[280px] space-y-2 overflow-y-auto">
-                    {changeHistory.slice(0, 8).map((entry) => (
-                      <div key={entry.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5">
-                        <p className="text-[10px] text-[var(--text-muted)]">
-                          {new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(entry.changedAt))}
-                        </p>
-                        <div className="mt-1.5 space-y-1">
-                          {entry.changes.map((change) => (
-                            <p key={`${entry.id}-${change.field}`} className="text-[12px] text-[var(--text-subtle)]">
-                              <span className="font-medium text-[var(--text)]">{change.label}</span>
-                              <span className="mx-1.5 text-[var(--text-muted)]">·</span>
-                              <span className="text-[var(--text-muted)]">{formatHistoryValue(change.field, change.from)}</span>
-                              <span className="mx-1.5 text-[var(--text-muted)]">→</span>
-                              <span className="font-medium text-[var(--text)]">{formatHistoryValue(change.field, change.to)}</span>
-                            </p>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-1.5">
+                  {detailTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveDetailTab(tab.id)}
+                      className={`flex w-full items-center justify-between rounded-[10px] border px-3 py-2 text-left text-[11px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                        selectedDetailTab === tab.id
+                          ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                          : "border-[var(--border)] bg-[var(--bg)] text-[var(--text-subtle)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  ))}
+                </div>
               </Panel>
             </aside>
 
             {/* Main content */}
-            <div className="space-y-4">
-              {showPolicyPanel ? (
-                <PolicyTrackingPanel
-                  tracking={policyTracking}
-                  showComparison={showPolicyComparison}
-                  onToggleComparison={() => setShowPolicyComparison((current) => !current)}
-                />
-              ) : null}
-              {spreadsheetSheets.length > 0 ? (
-                <SpreadsheetPanel
-                  sheets={spreadsheetSheets}
-                  activeSheetIndex={resolvedSheetIndex}
-                  onSelectSheet={setActiveSheetIndex}
-                />
-              ) : null}
-              {doc.rawContent?.trim() && (
-                <TextPanel
-                  eyebrow="원문"
-                  title={
-                    spreadsheetSheets.length > 0
-                      ? "추출 텍스트"
-                      : doc.sourceType === "image"
-                        ? "분석 입력 내용"
-                        : "원문 상세"
-                  }
-                  subtitle={getTextMeta(doc.rawContent)}
-                  tall
-                >
-                  {doc.rawContent}
-                </TextPanel>
-              )}
-              {(doc.userPrompt?.trim() || doc.ocrText?.trim()) && (
-                <div className="grid gap-4 xl:grid-cols-2">
-                  {doc.userPrompt?.trim() && (
-                    <TextPanel eyebrow="Input" title="사용자 설명" subtitle={getTextMeta(doc.userPrompt ?? "")} compact>
-                      {doc.userPrompt ?? ""}
-                    </TextPanel>
-                  )}
-                  {doc.ocrText?.trim() && (
-                    <TextPanel eyebrow="OCR" title="OCR 원문" subtitle={getTextMeta(doc.ocrText ?? "")} compact>
-                      {doc.ocrText ?? ""}
-                    </TextPanel>
-                  )}
+            <div className="min-h-0 space-y-3">
+              <div className="sticky top-0 z-10 rounded-[16px] border border-[var(--border)] bg-[var(--bg)]/95 p-1.5 shadow-[0_12px_28px_rgba(15,15,14,0.06)] backdrop-blur">
+                <div className="flex gap-1 overflow-x-auto">
+                  {detailTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveDetailTab(tab.id)}
+                      className={`shrink-0 rounded-[12px] px-3 py-2 text-[11px] font-semibold tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                        selectedDetailTab === tab.id
+                          ? "bg-[var(--text)] text-[var(--bg)]"
+                          : "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
-              )}
-              {doc.imagePreviews?.length ? (
-                <Panel title="첨부 이미지" action={
-                  <span className="text-[11px] text-[var(--text-muted)]">{doc.imagePreviews.length}개</span>
-                }>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {doc.imagePreviews.map((image) => (
-                      <div key={`${image.name}-${image.previewUrl.slice(0, 32)}`}
-                        className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)]">
-                        <Image src={image.previewUrl} alt={image.name} width={640} height={480} unoptimized className="h-40 w-full object-cover" />
-                        <div className="border-t border-[var(--border)] px-3 py-2 text-[12px] text-[var(--text-subtle)]">{image.name}</div>
+              </div>
+
+              <div className="max-h-[calc(92vh-168px)] overflow-y-auto pr-1">
+                {selectedDetailTab === "review" ? (
+                  <ReviewPanel
+                    doc={doc}
+                    title={title}
+                    subtitle={subtitle}
+                    category={category}
+                    typeLabel={typeLabel}
+                    progressState={progressState}
+                    scheduleSummary={scheduleSummary}
+                    dday={dday}
+                    healthLabel={healthLabel}
+                  />
+                ) : null}
+
+                {selectedDetailTab === "raw" ? (
+                  <div className="space-y-4">
+                    {doc.rawContent?.trim() ? (
+                      <TextPanel
+                        eyebrow="원문"
+                        title={
+                          spreadsheetSheets.length > 0
+                            ? "추출 텍스트"
+                            : doc.sourceType === "image"
+                              ? "분석 입력 내용"
+                              : "원문 상세"
+                        }
+                        subtitle={getTextMeta(doc.rawContent)}
+                        tall
+                      >
+                        {doc.rawContent}
+                      </TextPanel>
+                    ) : (
+                      <EmptyTabPanel label="저장된 원문이 없습니다." />
+                    )}
+                    {(doc.userPrompt?.trim() || doc.ocrText?.trim()) && (
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        {doc.userPrompt?.trim() && (
+                          <TextPanel eyebrow="Input" title="사용자 설명" subtitle={getTextMeta(doc.userPrompt ?? "")} compact>
+                            {doc.userPrompt ?? ""}
+                          </TextPanel>
+                        )}
+                        {doc.ocrText?.trim() && (
+                          <TextPanel eyebrow="OCR" title="OCR 원문" subtitle={getTextMeta(doc.ocrText ?? "")} compact>
+                            {doc.ocrText ?? ""}
+                          </TextPanel>
+                        )}
                       </div>
-                    ))}
+                    )}
+                    {doc.imagePreviews?.length ? (
+                      <ImagePreviewPanel images={doc.imagePreviews} />
+                    ) : null}
                   </div>
-                </Panel>
-              ) : null}
-              {/* Tags */}
-              {[
-                meta.keywords?.length ? { title: "키워드", items: meta.keywords.map((k) => `#${k}`), tone: "blue" as const } : null,
-                meta.relatedDocTypes?.length ? { title: "연관 문서", items: meta.relatedDocTypes, tone: "violet" as const } : null,
-                meta.missingParts?.length ? { title: "보완 필요", items: meta.missingParts, tone: "amber" as const } : null,
-              ].filter(Boolean).length > 0 && (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {meta.keywords?.length ? (
-                    <TagCard title="키워드" tone="blue">
-                      {meta.keywords.map((k) => <TagChip key={k} tone="blue">#{k}</TagChip>)}
-                    </TagCard>
-                  ) : null}
-                  {meta.relatedDocTypes?.length ? (
-                    <TagCard title="연관 문서" tone="violet">
-                      {meta.relatedDocTypes.map((r) => <TagChip key={r} tone="violet">{r}</TagChip>)}
-                    </TagCard>
-                  ) : null}
-                  {meta.missingParts?.length ? (
-                    <TagCard title="보완 필요" tone="amber">
-                      {meta.missingParts.map((p) => <TagChip key={p} tone="amber">{p}</TagChip>)}
-                    </TagCard>
-                  ) : null}
-                </div>
-              )}
+                ) : null}
+
+                {selectedDetailTab === "sheet" && spreadsheetSheets.length > 0 ? (
+                  <SpreadsheetPanel
+                    sheets={spreadsheetSheets}
+                    activeSheetIndex={resolvedSheetIndex}
+                    onSelectSheet={setActiveSheetIndex}
+                  />
+                ) : null}
+
+                {selectedDetailTab === "policy" && showPolicyPanel ? (
+                  <PolicyTrackingPanel
+                    tracking={policyTracking}
+                    showComparison={showPolicyComparison}
+                    onToggleComparison={() => setShowPolicyComparison((current) => !current)}
+                  />
+                ) : null}
+
+                {selectedDetailTab === "history" ? (
+                  <HistoryPanel changeHistory={changeHistory} />
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ReviewPanel({
+  doc,
+  title,
+  subtitle,
+  category,
+  typeLabel,
+  progressState,
+  scheduleSummary,
+  dday,
+  healthLabel,
+}: {
+  doc: Document;
+  title: string;
+  subtitle?: string;
+  category: string;
+  typeLabel: string;
+  progressState: string;
+  scheduleSummary: string;
+  dday: string | null;
+  healthLabel: string;
+}) {
+  const { meta } = doc;
+  const summary = meta.summary?.trim() || "아직 정리된 요약이 없습니다. 원문 탭에서 자료를 확인해 주세요.";
+  const standardBrief = buildStandardBrief({
+    doc,
+    category,
+    typeLabel,
+    progressState,
+    scheduleSummary,
+    dday,
+    healthLabel,
+  });
+  const reviewStats = [
+    { label: "분류", value: `${category} · ${typeLabel}` },
+    { label: "진행", value: progressState },
+    { label: "일정", value: dday ? `${scheduleSummary} · ${dday}` : scheduleSummary },
+    { label: "상태", value: healthLabel },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-[18px] border border-[var(--border)] bg-[var(--bg)] p-5 shadow-[var(--shadow-soft)]">
+        <div className="border-b border-[var(--border)] pb-4">
+          <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">REVIEW BRIEF</p>
+          <h3 className="mt-2 text-[18px] font-semibold leading-tight tracking-[-0.025em] text-[var(--text)]">{title}</h3>
+          {subtitle ? (
+            <p className="mt-1 text-[12px] tracking-[0.01em] text-[var(--text-muted)]">{subtitle}</p>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {reviewStats.map((item) => (
+            <div key={item.label} className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-3">
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
+              <p className="mt-1.5 text-[12px] font-semibold leading-[1.55] tracking-[-0.01em] text-[var(--text)]">{item.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 rounded-[14px] border border-[var(--border)] bg-[var(--bg-subtle)] px-4 py-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">핵심 요약</p>
+          <p className="mt-2 text-[13px] leading-[1.85] tracking-[-0.01em] text-[var(--text)] text-pretty">{summary}</p>
+        </div>
+      </section>
+
+      <div className="grid gap-3 xl:grid-cols-3">
+        <ReviewListCard
+          title="주요 키워드"
+          emptyLabel="키워드가 아직 없습니다."
+          items={meta.keywords?.map((item) => `#${item}`) ?? []}
+          tone="blue"
+        />
+        <ReviewListCard
+          title="연관 문서"
+          emptyLabel="연관 문서 정보가 없습니다."
+          items={meta.relatedDocTypes ?? []}
+          tone="violet"
+        />
+        <ReviewListCard
+          title="보완 필요"
+          emptyLabel="보완 필요 항목이 없습니다."
+          items={meta.missingParts ?? []}
+          tone="amber"
+        />
+      </div>
+
+      <section className="rounded-[18px] border border-[var(--border)] bg-[var(--bg)] p-5 shadow-[var(--shadow-soft)]">
+        <div className="border-b border-[var(--border)] pb-4">
+          <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">STANDARD BRIEF</p>
+          <h3 className="mt-1 text-[15px] font-semibold leading-tight tracking-[-0.02em] text-[var(--text)]">기획/정책서 표준 양식</h3>
+          <p className="mt-1 text-[11.5px] leading-[1.7] tracking-[-0.01em] text-[var(--text-subtle)]">
+            원문 내용을 기반으로 Executive Message, 배경, 핵심 요구/정책, 쟁점, 다음 액션 순서로 재구성했습니다.
+          </p>
+        </div>
+
+        {standardBrief.sections.length === 0 ? (
+          <p className="mt-4 rounded-[12px] border border-dashed border-[var(--border-strong)] px-3 py-4 text-[12px] text-[var(--text-muted)]">
+            정리할 원문 내용이 없습니다.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {standardBrief.sections.map((section, index) => (
+              <div key={section.title} className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-subtle)] px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--border-strong)] bg-[var(--bg)] text-[10px] font-semibold text-[var(--text-muted)]">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">{section.eyebrow}</p>
+                    <h4 className="mt-1 text-[13px] font-semibold tracking-[-0.015em] text-[var(--text)]">{section.title}</h4>
+                    {section.lead ? (
+                      <p className="mt-2 text-[12.5px] leading-[1.8] tracking-[-0.01em] text-[var(--text)] text-pretty">
+                        {section.lead}
+                      </p>
+                    ) : null}
+                    {section.items.length > 0 ? (
+                      <ul className="mt-3 space-y-2">
+                        {section.items.map((item) => (
+                          <li key={item} className="grid grid-cols-[8px_minmax(0,1fr)] gap-2 text-[12px] leading-[1.7] tracking-[-0.01em] text-[var(--text-subtle)]">
+                            <span className="mt-[0.72em] h-1.5 w-1.5 rounded-full bg-[var(--text-muted)]" />
+                            <span className="text-pretty">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ReviewListCard({
+  title,
+  emptyLabel,
+  items,
+  tone,
+}: {
+  title: string;
+  emptyLabel: string;
+  items: string[];
+  tone: "blue" | "violet" | "amber";
+}) {
+  return (
+    <TagCard title={title} tone={tone}>
+      {items.length > 0 ? (
+        items.map((item) => <TagChip key={item} tone={tone}>{item}</TagChip>)
+      ) : (
+        <span className="text-[12px] leading-[1.7] text-[var(--text-muted)]">{emptyLabel}</span>
+      )}
+    </TagCard>
+  );
+}
+
+type StandardBriefSection = {
+  eyebrow: string;
+  title: string;
+  lead?: string;
+  items: string[];
+};
+
+function buildStandardBrief({
+  doc,
+  category,
+  typeLabel,
+  progressState,
+  scheduleSummary,
+  dday,
+  healthLabel,
+}: {
+  doc: Document;
+  category: string;
+  typeLabel: string;
+  progressState: string;
+  scheduleSummary: string;
+  dday: string | null;
+  healthLabel: string;
+}) {
+  const units = extractBriefUnits(doc.rawContent);
+  const meta = doc.meta;
+  const summary = meta.summary?.trim();
+  const contextItems = pickBriefItems(units, [
+    /배경|목적|개요|현황|context|background|overview/i,
+    /서비스|사용자|고객|운영|정책|배송|계산|조건|제약/i,
+  ], 4);
+  const requirementItems = pickBriefItems(units, [
+    /요구|필수|해야|필요|정책|규칙|조건|기준|계산|검증|노출|저장|처리/i,
+    /requirement|policy|rule|must|should|criteria/i,
+  ], 5);
+  const riskItems = [
+    ...(meta.missingParts ?? []),
+    ...pickBriefItems(units, [
+      /리스크|위험|주의|예외|오류|문제|누락|불명확|확인|제약|한계/i,
+      /risk|issue|exception|missing|unclear|constraint/i,
+    ], 4),
+  ];
+  const actionItems = buildActionItems({
+    missingParts: meta.missingParts ?? [],
+    progressState,
+    scheduleSummary,
+    dday,
+    healthLabel,
+  });
+
+  const sections: StandardBriefSection[] = [
+    {
+      eyebrow: "EXECUTIVE MESSAGE",
+      title: "한 줄 결론",
+      lead: summary || firstUsefulBriefUnit(units) || "원문에서 결론을 자동 추출하지 못했습니다. 원문 탭에서 상세 내용을 확인해 주세요.",
+      items: [
+        `${category} / ${typeLabel} 성격의 자료로 분류됩니다.`,
+        `현재 진행 상태는 ${progressState}, 관리 상태는 ${healthLabel}입니다.`,
+      ],
+    },
+    {
+      eyebrow: "CONTEXT",
+      title: "배경 및 목적",
+      lead: contextItems[0] ?? summary,
+      items: contextItems.slice(1),
+    },
+    {
+      eyebrow: "POLICY / REQUIREMENTS",
+      title: "핵심 요구사항 및 정책 기준",
+      items: uniqueBriefItems([
+        ...(meta.keywords?.length ? [`핵심 키워드: ${meta.keywords.join(", ")}`] : []),
+        ...requirementItems,
+      ]).slice(0, 6),
+    },
+    {
+      eyebrow: "ISSUES",
+      title: "쟁점 및 보완 필요",
+      items: uniqueBriefItems(riskItems).slice(0, 6),
+    },
+    {
+      eyebrow: "NEXT ACTION",
+      title: "검토 및 실행 항목",
+      items: actionItems,
+    },
+  ].filter((section) => section.lead || section.items.length > 0);
+
+  return { sections };
+}
+
+function extractBriefUnits(rawContent?: string) {
+  const blocks = buildReaderBlocks(rawContent ?? "");
+  const units: string[] = [];
+
+  blocks.forEach((block) => {
+    if (block.type === "heading") {
+      units.push(block.text);
+      return;
+    }
+
+    if (block.type === "paragraph") {
+      units.push(...splitBriefSentences(block.text));
+      return;
+    }
+
+    if (block.type === "list") {
+      units.push(...block.items);
+      return;
+    }
+
+    if (block.type === "keyValue") {
+      units.push(...block.items.map((item) => `${item.label}: ${item.value}`));
+      return;
+    }
+
+    units.push(...block.lines.flatMap(splitBriefSentences));
+  });
+
+  return uniqueBriefItems(units).slice(0, 80);
+}
+
+function splitBriefSentences(value: string) {
+  const normalized = normalizeBriefText(value);
+  if (!normalized) return [] as string[];
+
+  const parts = normalized
+    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .map(normalizeBriefText)
+    .filter((item) => item.length >= 10);
+
+  return parts.length > 1 ? parts : [normalized];
+}
+
+function pickBriefItems(units: string[], patterns: RegExp[], limit: number) {
+  const matches = units.filter((unit) => patterns.some((pattern) => pattern.test(unit)));
+  return uniqueBriefItems(matches).slice(0, limit);
+}
+
+function buildActionItems({
+  missingParts,
+  progressState,
+  scheduleSummary,
+  dday,
+  healthLabel,
+}: {
+  missingParts: string[];
+  progressState: string;
+  scheduleSummary: string;
+  dday: string | null;
+  healthLabel: string;
+}) {
+  const items = [
+    missingParts.length > 0
+      ? `보완 필요 항목을 우선 확인합니다: ${missingParts.slice(0, 3).join(", ")}`
+      : "원문 기준으로 누락 항목이 없는지 최종 검토합니다.",
+    `진행 상태를 ${progressState} 기준으로 관리합니다.`,
+    dday ? `${scheduleSummary} 기준 ${dday} 상태를 확인합니다.` : `${scheduleSummary} 정보를 기준으로 일정 확정 여부를 확인합니다.`,
+    healthLabel !== "정상" ? `${healthLabel} 상태의 원인을 확인하고 담당자 액션을 지정합니다.` : "현재 상태를 유지하되 변경 발생 시 이력을 업데이트합니다.",
+  ];
+
+  return uniqueBriefItems(items).slice(0, 5);
+}
+
+function firstUsefulBriefUnit(units: string[]) {
+  return units.find((unit) => unit.length >= 18) ?? units[0];
+}
+
+function uniqueBriefItems(items: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  items.map(normalizeBriefText).forEach((item) => {
+    if (!item) return;
+    const key = item.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(truncateBriefText(item, 220));
+  });
+
+  return result;
+}
+
+function normalizeBriefText(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/^[-*•·\d.)\s]+/, "")
+    .trim();
+}
+
+function truncateBriefText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1).trim()}…` : value;
+}
+
+function ImagePreviewPanel({ images }: { images: NonNullable<Document["imagePreviews"]> }) {
+  return (
+    <Panel title="첨부 이미지" action={
+      <span className="text-[11px] text-[var(--text-muted)]">{images.length}개</span>
+    }>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {images.map((image) => (
+          <div key={`${image.name}-${image.previewUrl.slice(0, 32)}`}
+            className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)]">
+            <Image src={image.previewUrl} alt={image.name} width={640} height={480} unoptimized className="h-40 w-full object-cover" />
+            <div className="border-t border-[var(--border)] px-3 py-2 text-[12px] text-[var(--text-subtle)]">{image.name}</div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function HistoryPanel({ changeHistory }: { changeHistory: Document["changeHistory"] }) {
+  const entries = changeHistory ?? [];
+  return (
+    <Panel title="변경 이력" action={
+      <span className="text-[11px] text-[var(--text-muted)]">{entries.length}건</span>
+    }>
+      {entries.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-[var(--border-strong)] px-3 py-4 text-[12px] text-[var(--text-muted)]">
+          변경 이력이 없습니다.
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          {entries.map((entry) => (
+            <div key={entry.id} className="rounded-[12px] border border-[var(--border)] bg-[var(--bg)] px-3 py-3">
+              <p className="text-[10px] text-[var(--text-muted)]">
+                {new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(entry.changedAt))}
+              </p>
+              <div className="mt-2 space-y-1.5">
+                {entry.changes.map((change) => (
+                  <p key={`${entry.id}-${change.field}`} className="text-[12px] text-[var(--text-subtle)]">
+                    <span className="font-medium text-[var(--text)]">{change.label}</span>
+                    <span className="mx-1.5 text-[var(--text-muted)]">·</span>
+                    <span className="text-[var(--text-muted)]">{formatHistoryValue(change.field, change.from)}</span>
+                    <span className="mx-1.5 text-[var(--text-muted)]">→</span>
+                    <span className="font-medium text-[var(--text)]">{formatHistoryValue(change.field, change.to)}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function EmptyTabPanel({ label }: { label: string }) {
+  return (
+    <div className="rounded-[18px] border border-dashed border-[var(--border-strong)] bg-[var(--bg)] px-5 py-12 text-center">
+      <p className="text-[13px] text-[var(--text-muted)]">{label}</p>
     </div>
   );
 }
@@ -1489,15 +1912,31 @@ function looksDateLike(value: string) {
   return /^\d{4}[./-]\d{1,2}[./-]\d{1,2}$/.test(value.trim());
 }
 
-function parseSpreadsheetSheetsFromRawContent(
-  rawContent?: string,
-  sourceLabel?: string
-) {
+function resolveSpreadsheetSheetsForDetail(doc: Document) {
+  if (doc.spreadsheetSheets?.length) {
+    return doc.spreadsheetSheets;
+  }
+
+  const canInferTableFromRawContent =
+    isSpreadsheetSourceLabel(doc.sourceLabel) || doc.sourceType === "text" || !doc.sourceType;
+
+  if (!canInferTableFromRawContent) {
+    return [] as SpreadsheetSheet[];
+  }
+
+  return parseSpreadsheetSheetsFromRawContent(doc.rawContent, doc.sourceLabel);
+}
+
+function isSpreadsheetSourceLabel(sourceLabel?: string) {
+  return /\.(xlsx|xls|csv)$/i.test(sourceLabel ?? "");
+}
+
+function parseSpreadsheetSheetsFromRawContent(rawContent?: string, sourceLabel?: string) {
   const normalized = rawContent?.trim();
   if (!normalized) return [] as SpreadsheetSheet[];
 
-  const looksLikeSpreadsheetSource = /\.(xlsx|xls|csv)$/i.test(sourceLabel ?? "");
-  const hasMarkdownTable = /\|.+\|/.test(normalized) && /\|\s*---/.test(normalized);
+  const looksLikeSpreadsheetSource = isSpreadsheetSourceLabel(sourceLabel);
+  const hasMarkdownTable = hasMarkdownTableContent(normalized);
   const hasDelimitedRows = hasDelimitedTableContent(normalized);
 
   if (!looksLikeSpreadsheetSource && !hasMarkdownTable && !hasDelimitedRows) {
@@ -1513,7 +1952,7 @@ function parseSpreadsheetSheetsFromRawContent(
   const sheets = matches
     .map((match, index) => {
       const rows = parseMarkdownTable(match[2]);
-      if (rows.length === 0) return null;
+      if (!isUsableTableRows(rows)) return null;
       return {
         name: match[1]?.trim() || `시트 ${index + 1}`,
         rows,
@@ -1536,7 +1975,7 @@ function parseSpreadsheetSheetsFromRawContent(
   }
 
   const fallbackRows = parseMarkdownTable(normalized);
-  if (fallbackRows.length === 0) {
+  if (!isUsableTableRows(fallbackRows)) {
     return [] as SpreadsheetSheet[];
   }
 
@@ -1576,18 +2015,24 @@ function parseMarkdownTable(markdown: string) {
   return rows;
 }
 
+function hasMarkdownTableContent(text: string) {
+  const matches = Array.from(
+    text.matchAll(/(?:^|\n)(?:#{2,3}\s*시트:\s*(.+?)\s*\n+)?((?:\|.*\|\n?)+)/g)
+  );
+
+  return matches.some((match) => isUsableTableRows(parseMarkdownTable(match[2])));
+}
+
 function hasDelimitedTableContent(text: string) {
   const lines = text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .slice(0, 6);
+    .slice(0, 12);
 
   if (lines.length < 2) return false;
 
-  return [",", "\t", ";"].some((delimiter) =>
-    lines.filter((line) => splitDelimitedLine(line, delimiter).length >= 2).length >= 2
-  );
+  return detectDelimiter(lines) !== null;
 }
 
 function parseDelimitedTable(text: string) {
@@ -1601,11 +2046,15 @@ function parseDelimitedTable(text: string) {
   }
 
   const delimiter = detectDelimiter(lines);
+  if (!delimiter) {
+    return [] as string[][];
+  }
+
   const rows = lines
     .map((line) => splitDelimitedLine(line, delimiter).map((cell) => cell.trim()))
     .filter((row) => row.some((cell) => cell.length > 0));
 
-  if (rows.length < 2) {
+  if (!isUsableTableRows(rows)) {
     return [] as string[][];
   }
 
@@ -1614,7 +2063,7 @@ function parseDelimitedTable(text: string) {
 
 function detectDelimiter(lines: string[]) {
   const candidates = [",", "\t", ";"];
-  let bestDelimiter = ",";
+  let bestDelimiter: string | null = null;
   let bestScore = -1;
 
   candidates.forEach((delimiter) => {
@@ -1624,8 +2073,16 @@ function detectDelimiter(lines: string[]) {
       .filter((count) => count > 1);
 
     if (counts.length < 2) return;
+    const countFrequency = counts.reduce<Record<number, number>>((acc, count) => {
+      acc[count] = (acc[count] ?? 0) + 1;
+      return acc;
+    }, {});
+    const dominantCount = Object.entries(countFrequency).sort((a, b) => Number(b[1]) - Number(a[1]))[0];
 
-    const score = counts.reduce((sum, count) => sum + count, 0);
+    if (!dominantCount || Number(dominantCount[0]) < 2 || Number(dominantCount[1]) < 2) return;
+    if (Number(dominantCount[1]) / counts.length < 0.7) return;
+
+    const score = Number(dominantCount[0]) * Number(dominantCount[1]);
     if (score > bestScore) {
       bestScore = score;
       bestDelimiter = delimiter;
@@ -1633,6 +2090,26 @@ function detectDelimiter(lines: string[]) {
   });
 
   return bestDelimiter;
+}
+
+function isUsableTableRows(rows: string[][]) {
+  if (rows.length < 2) return false;
+
+  const columnCounts = rows
+    .map((row) => row.length)
+    .filter((count) => count >= 2);
+
+  if (columnCounts.length < 2) return false;
+
+  const countFrequency = columnCounts.reduce<Record<number, number>>((acc, count) => {
+    acc[count] = (acc[count] ?? 0) + 1;
+    return acc;
+  }, {});
+  const dominantCount = Object.entries(countFrequency).sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+
+  if (!dominantCount) return false;
+
+  return Number(dominantCount[0]) >= 2 && Number(dominantCount[1]) >= 2;
 }
 
 function splitDelimitedLine(line: string, delimiter: string) {

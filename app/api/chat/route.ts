@@ -29,6 +29,8 @@ import {
   resolveProgressState,
   resolveScheduleSummary,
 } from "@/lib/meta";
+import { getAuthUserFromRequest, getDisplayNameFromUser } from "@/lib/auth";
+import { requireWorkspaceAccess, workspaceAccessErrorResponse } from "@/lib/workspace-access";
 import {
   buildRealtimeReply,
   formatRealtimeLookupContext,
@@ -743,6 +745,11 @@ function isGeminiRateLimitOrQuotaError(error: unknown) {
   );
 }
 
+function isGeminiStreamParseError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.toLowerCase().includes("failed to parse stream");
+}
+
 function isGroqRateLimitOrUnavailableError(error: unknown) {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
@@ -902,6 +909,10 @@ function toUserFacingErrorMessage(error: unknown) {
     return retryDelaySeconds
       ? `Gemini 사용량 한도에 도달했습니다. ${formatRetryDelay(retryDelaySeconds)} 다시 시도해 주세요.`
       : "Gemini 사용량 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.";
+  }
+
+  if (isGeminiStreamParseError(error)) {
+    return "Gemini 응답 스트림이 중간에 끊겼습니다. 다시 시도해 주세요.";
   }
 
   if (isGroqRateLimitOrUnavailableError(error)) {
@@ -1071,7 +1082,12 @@ function buildCreateMetaFromAction(
   };
 }
 
-async function executeDocumentActions(actions: DocumentAction[], currentDocs: DocumentSummary[], authorName?: string) {
+async function executeDocumentActions(
+  actions: DocumentAction[],
+  currentDocs: DocumentSummary[],
+  authorName: string | undefined,
+  workspaceId: string
+) {
   const createdDocs: DocumentSummary[] = [];
   const updatedDocs: DocumentSummary[] = [];
   const deletedDocIds: string[] = [];
@@ -1104,13 +1120,14 @@ async function executeDocumentActions(actions: DocumentAction[], currentDocs: Do
           },
           changeHistory: [],
         },
-        meta
+        meta,
+        workspaceId
       );
 
       if (createdDoc) {
         const createdSummary = toDocumentSummary(createdDoc);
         createdDocs.push(createdSummary);
-        await createRelations(createdSummary.id, workingDocs, createdDoc.meta);
+        await createRelations(createdSummary.id, workingDocs, createdDoc.meta, workspaceId);
         workingDocs = [createdSummary, ...workingDocs];
         summaryLines.push(buildCreateSummaryLine(createdSummary));
       } else {
@@ -1121,7 +1138,7 @@ async function executeDocumentActions(actions: DocumentAction[], currentDocs: Do
 
     if (action.operation === "delete") {
       if (!action.targetDocId) continue;
-      const deleted = await deleteDocumentById(action.targetDocId);
+      const deleted = await deleteDocumentById(action.targetDocId, workspaceId);
       if (deleted) {
         deletedDocIds.push(action.targetDocId);
         summaryLines.push(`- ${action.targetTitle ?? "문서"} 카드를 삭제했습니다.`);
@@ -1134,16 +1151,20 @@ async function executeDocumentActions(actions: DocumentAction[], currentDocs: Do
 
     if (!action.targetDocId || !action.updates) continue;
 
-    const updatedDoc = await updateDocumentFields(action.targetDocId, {
-      progressState: action.updates.progressState,
-      deliveryHealth: action.updates.deliveryHealth,
-      dueDate: action.updates.dueDate,
-      title: action.updates.title,
-      serviceName: action.updates.serviceName,
-      docType: action.updates.docType,
-      summary: action.updates.summary,
-      isDocument: action.updates.isDocument,
-    });
+    const updatedDoc = await updateDocumentFields(
+      action.targetDocId,
+      {
+        progressState: action.updates.progressState,
+        deliveryHealth: action.updates.deliveryHealth,
+        dueDate: action.updates.dueDate,
+        title: action.updates.title,
+        serviceName: action.updates.serviceName,
+        docType: action.updates.docType,
+        summary: action.updates.summary,
+        isDocument: action.updates.isDocument,
+      },
+      workspaceId
+    );
 
     if (updatedDoc) {
       const updatedSummary = toDocumentSummary(updatedDoc);
@@ -1185,6 +1206,8 @@ async function extractOcrText(images: ImagePayload[]) {
 
 async function detectAndSaveSchedule(
   prompt: string,
+  workspaceId: string,
+  authorization: string | null,
   sourceType?: AnalysisSourceType,
   hasImages?: boolean
 ): Promise<Schedule | null> {
@@ -1207,10 +1230,14 @@ async function detectAndSaveSchedule(
     }
 
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/schedules`,
+      `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/schedules?workspaceId=${workspaceId}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-docflow-workspace-id": workspaceId,
+          ...(authorization ? { Authorization: authorization } : {}),
+        },
         body: JSON.stringify({
           title: parsed.title.trim(),
           startDate: parsed.startDate,
@@ -1229,6 +1256,8 @@ async function detectAndSaveSchedule(
 }
 
 async function* streamTextAnalysis(prompt: string, systemPrompt: string) {
+  let emittedGeminiText = false;
+
   try {
     const stream = await withGeminiFallback(async (modelName) => {
       const model = createGeminiTextModel(modelName, systemPrompt);
@@ -1237,11 +1266,23 @@ async function* streamTextAnalysis(prompt: string, systemPrompt: string) {
 
     for await (const chunk of stream.stream) {
       const text = chunk.text();
-      if (text) yield text;
+      if (text) {
+        emittedGeminiText = true;
+        yield text;
+      }
     }
     return;
   } catch (error) {
-    if (!isGeminiRateLimitOrQuotaError(error) && !isGeminiUnavailableError(error)) {
+    if (isGeminiStreamParseError(error) && emittedGeminiText) {
+      console.warn("Gemini stream ended with a parse error after partial text was emitted.");
+      return;
+    }
+
+    if (
+      !isGeminiRateLimitOrQuotaError(error) &&
+      !isGeminiUnavailableError(error) &&
+      !isGeminiStreamParseError(error)
+    ) {
       throw error;
     }
   }
@@ -1272,6 +1313,8 @@ async function* streamTextAnalysis(prompt: string, systemPrompt: string) {
 }
 
 async function* streamImageAnalysis(prompt: string, ocrText: string, images: ImagePayload[]) {
+  let emittedGeminiText = false;
+
   try {
     const stream = await withGeminiFallback(async (modelName) => {
       const model = createGeminiAnalysisModel(modelName);
@@ -1290,11 +1333,25 @@ ${ocrText || "추출된 텍스트 없음"}
 
     for await (const chunk of stream.stream) {
       const text = chunk.text();
-      if (text) yield text;
+      if (text) {
+        emittedGeminiText = true;
+        yield text;
+      }
     }
   } catch (error) {
+    if (isGeminiStreamParseError(error) && emittedGeminiText) {
+      console.warn("Gemini image stream ended with a parse error after partial text was emitted.");
+      return;
+    }
+
     if (!canUseAnthropicFallback()) throw error;
-    if (!isGeminiUnavailableError(error) && !isGeminiRateLimitOrQuotaError(error)) throw error;
+    if (
+      !isGeminiUnavailableError(error) &&
+      !isGeminiRateLimitOrQuotaError(error) &&
+      !isGeminiStreamParseError(error)
+    ) {
+      throw error;
+    }
 
     const text = await analyzeImagesWithAnthropic(prompt, ocrText, images);
     if (text) yield text;
@@ -1322,11 +1379,20 @@ export async function POST(req: NextRequest) {
     spreadsheet?: SpreadsheetPayload;
   } = await req.json();
 
+  let workspaceId: string;
+  let authUser: Awaited<ReturnType<typeof getAuthUserFromRequest>>;
+  try {
+    const access = await requireWorkspaceAccess(req);
+    workspaceId = access.workspaceId;
+    authUser = access.user;
+  } catch (error) {
+    return workspaceAccessErrorResponse(error);
+  }
   const prompt = analysisContent?.trim() || messages[messages.length - 1]?.content || "";
-  const resolvedAuthorName = resolveAuthorName(authorName);
+  const resolvedAuthorName = resolveAuthorName(getDisplayNameFromUser(authUser) ?? authorName);
   const encoder = new TextEncoder();
   let fullText = "";
-  const allDocs = await fetchDocuments();
+  const allDocs = await fetchDocuments(workspaceId);
   const workspaceContext = buildWorkspaceContext(allDocs);
   const chatMode = detectChatMode({
     prompt,
@@ -1434,11 +1500,12 @@ ${formatRealtimeLookupContext(realtimeLookup)}`
                   })),
                 }
               : prompt,
-            meta
+            meta,
+            workspaceId
           );
 
           if (saved) {
-            await createRelations(saved.id, allDocs, meta);
+            await createRelations(saved.id, allDocs, meta, workspaceId);
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ savedDoc: toDocumentSummary(saved) })}\n\n`)
             );
@@ -1446,7 +1513,13 @@ ${formatRealtimeLookupContext(realtimeLookup)}`
         }
 
         if (!images?.length && !realtimeLookup) {
-          const savedSchedule = await detectAndSaveSchedule(prompt, sourceType, Boolean(images?.length));
+          const savedSchedule = await detectAndSaveSchedule(
+            prompt,
+            workspaceId,
+            req.headers.get("authorization"),
+            sourceType,
+            Boolean(images?.length)
+          );
           if (savedSchedule) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ savedSchedule })}\n\n`)
@@ -1468,7 +1541,8 @@ ${formatRealtimeLookupContext(realtimeLookup)}`
             const actionResult = await executeDocumentActions(
               actionPlan.actions,
               allDocs,
-              resolvedAuthorName
+              resolvedAuthorName,
+              workspaceId
             );
 
             if (actionResult.summaryLines.length > 0) {

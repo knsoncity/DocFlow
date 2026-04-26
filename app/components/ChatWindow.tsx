@@ -55,12 +55,16 @@ export default function ChatWindow({
   onDocDeleted,
   onScheduleAdded,
   authorName,
+  accessToken,
+  workspaceId,
 }: {
   onDocAdded: (doc: DocumentSummary) => void;
   onDocUpdated?: (doc: DocumentSummary) => void;
   onDocDeleted?: (docId: string) => void;
   onScheduleAdded?: (schedule: Schedule) => void;
   authorName?: string;
+  accessToken?: string;
+  workspaceId?: string;
 }) {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
@@ -128,7 +132,11 @@ export default function ChatWindow({
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(workspaceId ? { "x-docflow-workspace-id": workspaceId } : {}),
+        },
         body: JSON.stringify({
           messages: history,
           images,

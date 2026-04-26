@@ -15,6 +15,9 @@ import {
   withPolicyTracking,
   withPolicyTrackingForDetail,
 } from "./policy-tracking";
+import { DEFAULT_WORKSPACE_ID, normalizeWorkspaceId } from "./workspace";
+import { ensureWorkspace } from "./workspaces";
+import { isWorkspaceSchemaError } from "./db-errors";
 
 const VALID_DOC_TYPES: DocType[] = ["PRD", "화면정의서", "플로우차트", "API명세", "회의록", "기타"];
 const STRUCTURED_RAW_V1_PREFIX = "__DOCFLOW_RAW_V1__:";
@@ -339,6 +342,7 @@ function dbRowToDocumentSummary(row: DbDocument): DocumentSummary {
 
   return {
     id: row.id,
+    workspaceId: row.workspace_id ?? DEFAULT_WORKSPACE_ID,
     createdAt: row.created_at,
     sourceType: raw?.sourceType,
     sourceLabel: raw?.sourceLabel,
@@ -366,6 +370,7 @@ async function dbRowToDocument(row: DbDocument): Promise<Document> {
 export function toDocumentSummary(doc: Document | DocumentSummary): DocumentSummary {
   return {
     id: doc.id,
+    workspaceId: doc.workspaceId,
     meta: doc.meta,
     createdAt: doc.createdAt,
     sourceType: doc.sourceType,
@@ -375,14 +380,28 @@ export function toDocumentSummary(doc: Document | DocumentSummary): DocumentSumm
   };
 }
 
-export async function upsertService(name: string): Promise<string | null> {
+export async function upsertService(name: string, workspaceId = DEFAULT_WORKSPACE_ID): Promise<string | null> {
+  const resolvedWorkspaceId = await ensureWorkspace(workspaceId);
   const { data, error } = await getSupabaseAdmin()
     .from("services")
-    .upsert({ name }, { onConflict: "name" })
+    .upsert(
+      { name, workspace_id: resolvedWorkspaceId },
+      { onConflict: "workspace_id,name" }
+    )
     .select("id")
     .single();
 
   if (error) {
+    if (isWorkspaceSchemaError(error)) {
+      const legacy = await getSupabaseAdmin()
+        .from("services")
+        .upsert({ name }, { onConflict: "name" })
+        .select("id")
+        .single();
+
+      if (!legacy.error) return legacy.data.id;
+    }
+
     console.error("upsertService:", error);
     return null;
   }
@@ -392,20 +411,24 @@ export async function upsertService(name: string): Promise<string | null> {
 
 export async function saveDocument(
   rawContent: string | StructuredRawContent,
-  meta: DocMeta
+  meta: DocMeta,
+  workspaceId = DEFAULT_WORKSPACE_ID
 ): Promise<Document | null> {
   const id = crypto.randomUUID();
+  const resolvedWorkspaceId = await ensureWorkspace(workspaceId);
   let service_id: string | null = null;
 
   if (meta.serviceName) {
-    service_id = await upsertService(meta.serviceName);
+    service_id = await upsertService(meta.serviceName, resolvedWorkspaceId);
   }
 
   const serializedRawContent = await serializeRawContent(id, rawContent, meta);
-  const { data, error } = await getSupabaseAdmin()
+  const admin = getSupabaseAdmin();
+  let result = await admin
     .from("documents")
     .insert({
       id,
+      workspace_id: resolvedWorkspaceId,
       service_id,
       raw_content: serializedRawContent,
       doc_type: normalizeDocType(meta.docType),
@@ -420,6 +443,31 @@ export async function saveDocument(
     })
     .select("*, services(name)")
     .single();
+  let data = result.data;
+  let error = result.error;
+
+  if (error && isWorkspaceSchemaError(error)) {
+    result = await admin
+      .from("documents")
+      .insert({
+        id,
+        service_id,
+        raw_content: serializedRawContent,
+        doc_type: normalizeDocType(meta.docType),
+        feature_name: meta.featureName ?? null,
+        version: meta.version ?? null,
+        author: meta.author ?? null,
+        summary: meta.summary ?? null,
+        keywords: meta.keywords ?? [],
+        completeness: meta.completeness ?? null,
+        missing_parts: meta.missingParts ?? [],
+        related_doc_types: meta.relatedDocTypes ?? [],
+      })
+      .select("*, services(name)")
+      .single();
+    data = result.data;
+    error = result.error;
+  }
 
   if (error) {
     console.error("saveDocument:", error);
@@ -430,14 +478,28 @@ export async function saveDocument(
     return null;
   }
 
-  return fetchDocumentById(data.id);
+  return fetchDocumentById(data.id, resolvedWorkspaceId);
 }
 
-export async function fetchDocuments(): Promise<DocumentSummary[]> {
-  const { data, error } = await getSupabaseAdmin()
+export async function fetchDocuments(workspaceId = DEFAULT_WORKSPACE_ID): Promise<DocumentSummary[]> {
+  const resolvedWorkspaceId = normalizeWorkspaceId(workspaceId);
+  const admin = getSupabaseAdmin();
+  let result = await admin
     .from("documents")
     .select("*, services(name)")
+    .eq("workspace_id", resolvedWorkspaceId)
     .order("created_at", { ascending: false });
+  let data = result.data;
+  let error = result.error;
+
+  if (error && isWorkspaceSchemaError(error)) {
+    result = await admin
+      .from("documents")
+      .select("*, services(name)")
+      .order("created_at", { ascending: false });
+    data = result.data;
+    error = result.error;
+  }
 
   if (error) {
     console.error("fetchDocuments:", error);
@@ -447,13 +509,27 @@ export async function fetchDocuments(): Promise<DocumentSummary[]> {
   return withPolicyTracking((data ?? []).map(dbRowToDocumentSummary));
 }
 
-export async function fetchDocumentById(id: string): Promise<Document | null> {
+export async function fetchDocumentById(id: string, workspaceId = DEFAULT_WORKSPACE_ID): Promise<Document | null> {
+  const resolvedWorkspaceId = normalizeWorkspaceId(workspaceId);
   const admin = getSupabaseAdmin();
-  const { data, error } = await admin
+  let result = await admin
     .from("documents")
     .select("*, services(name)")
     .eq("id", id)
+    .eq("workspace_id", resolvedWorkspaceId)
     .single();
+  let data = result.data;
+  let error = result.error;
+
+  if (error && isWorkspaceSchemaError(error)) {
+    result = await admin
+      .from("documents")
+      .select("*, services(name)")
+      .eq("id", id)
+      .single();
+    data = result.data;
+    error = result.error;
+  }
 
   if (error || !data) {
     console.error("fetchDocumentById:", error);
@@ -461,16 +537,29 @@ export async function fetchDocumentById(id: string): Promise<Document | null> {
   }
 
   const doc = await dbRowToDocument(data);
-  const summaries = await fetchDocuments();
+  const summaries = await fetchDocuments(resolvedWorkspaceId);
   const previousDocId = summaries.find((item) => item.id === doc.id)?.policyTracking?.previousDocId;
   let previousDoc: Document | null = null;
 
   if (previousDocId) {
-    const { data: previousRow, error: previousError } = await admin
+    let previousResult = await admin
       .from("documents")
       .select("*, services(name)")
       .eq("id", previousDocId)
+      .eq("workspace_id", resolvedWorkspaceId)
       .single();
+    let previousRow = previousResult.data;
+    let previousError = previousResult.error;
+
+    if (previousError && isWorkspaceSchemaError(previousError)) {
+      previousResult = await admin
+        .from("documents")
+        .select("*, services(name)")
+        .eq("id", previousDocId)
+        .single();
+      previousRow = previousResult.data;
+      previousError = previousResult.error;
+    }
 
     if (!previousError && previousRow) {
       previousDoc = await dbRowToDocument(previousRow);
@@ -482,21 +571,37 @@ export async function fetchDocumentById(id: string): Promise<Document | null> {
 
 export async function updateDocumentMeta(
   id: string,
-  updates: DocumentMetaUpdates
+  updates: DocumentMetaUpdates,
+  workspaceId = DEFAULT_WORKSPACE_ID
 ): Promise<Document | null> {
-  return updateDocumentFields(id, updates);
+  return updateDocumentFields(id, updates, workspaceId);
 }
 
 export async function updateDocumentFields(
   id: string,
-  updates: DocumentFieldUpdates
+  updates: DocumentFieldUpdates,
+  workspaceId = DEFAULT_WORKSPACE_ID
 ): Promise<Document | null> {
+  const resolvedWorkspaceId = normalizeWorkspaceId(workspaceId);
   const admin = getSupabaseAdmin();
-  const { data: existingRow, error: fetchError } = await admin
+  let fetchResult = await admin
     .from("documents")
     .select("*, services(name)")
     .eq("id", id)
+    .eq("workspace_id", resolvedWorkspaceId)
     .single();
+  let existingRow = fetchResult.data;
+  let fetchError = fetchResult.error;
+
+  if (fetchError && isWorkspaceSchemaError(fetchError)) {
+    fetchResult = await admin
+      .from("documents")
+      .select("*, services(name)")
+      .eq("id", id)
+      .single();
+    existingRow = fetchResult.data;
+    fetchError = fetchResult.error;
+  }
 
   if (fetchError || !existingRow) {
     console.error("updateDocumentMeta fetch:", fetchError);
@@ -560,7 +665,7 @@ export async function updateDocumentFields(
 
   let service_id: string | null = null;
   if (nextServiceName) {
-    service_id = await upsertService(nextServiceName);
+    service_id = await upsertService(nextServiceName, resolvedWorkspaceId);
   }
 
   const nextRawContent = await serializeRawContent(
@@ -572,7 +677,7 @@ export async function updateDocumentFields(
     },
     mergedMeta
   );
-  const { data, error } = await admin
+  let updateResult = await admin
     .from("documents")
     .update({
       service_id,
@@ -584,44 +689,98 @@ export async function updateDocumentFields(
       summary: nextSummary ?? null,
     })
     .eq("id", id)
+    .eq("workspace_id", resolvedWorkspaceId)
     .select("*, services(name)")
     .single();
+  let data = updateResult.data;
+  let error = updateResult.error;
+
+  if (error && isWorkspaceSchemaError(error)) {
+    updateResult = await admin
+      .from("documents")
+      .update({
+        service_id,
+        raw_content: nextRawContent,
+        doc_type: normalizeDocType(nextDocType),
+        feature_name: nextFeatureName ?? null,
+        version: nextVersion ?? null,
+        author: nextAuthor ?? null,
+        summary: nextSummary ?? null,
+      })
+      .eq("id", id)
+      .select("*, services(name)")
+      .single();
+    data = updateResult.data;
+    error = updateResult.error;
+  }
 
   if (error || !data) {
     console.error("updateDocumentMeta update:", error);
     return null;
   }
 
-  return fetchDocumentById(data.id);
+  return fetchDocumentById(data.id, resolvedWorkspaceId);
 }
 
-export async function deleteDocumentById(id: string): Promise<boolean> {
+export async function deleteDocumentById(id: string, workspaceId = DEFAULT_WORKSPACE_ID): Promise<boolean> {
+  const resolvedWorkspaceId = normalizeWorkspaceId(workspaceId);
   const admin = getSupabaseAdmin();
-  const { data: existingRow, error: fetchError } = await admin
+  let fetchResult = await admin
     .from("documents")
     .select("raw_content")
     .eq("id", id)
+    .eq("workspace_id", resolvedWorkspaceId)
     .maybeSingle();
+  let existingRow = fetchResult.data;
+  let fetchError = fetchResult.error;
+
+  if (fetchError && isWorkspaceSchemaError(fetchError)) {
+    fetchResult = await admin
+      .from("documents")
+      .select("raw_content")
+      .eq("id", id)
+      .maybeSingle();
+    existingRow = fetchResult.data;
+    fetchError = fetchResult.error;
+  }
 
   if (fetchError) {
     console.error("deleteDocumentById fetch:", fetchError);
     return false;
   }
 
-  const relationDelete = await admin
+  let relationDelete = await admin
     .from("doc_relations")
     .delete()
+    .eq("workspace_id", resolvedWorkspaceId)
     .or(`from_doc.eq.${id},to_doc.eq.${id}`);
+
+  if (relationDelete.error && isWorkspaceSchemaError(relationDelete.error)) {
+    relationDelete = await admin
+      .from("doc_relations")
+      .delete()
+      .or(`from_doc.eq.${id},to_doc.eq.${id}`);
+  }
 
   if (relationDelete.error) {
     console.error("deleteDocumentById relations:", relationDelete.error);
     return false;
   }
 
-  const { error } = await admin
+  let deleteResult = await admin
     .from("documents")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("workspace_id", resolvedWorkspaceId);
+  let error = deleteResult.error;
+
+  if (error && isWorkspaceSchemaError(error)) {
+    deleteResult = await admin
+      .from("documents")
+      .delete()
+      .eq("id", id);
+    error = deleteResult.error;
+  }
 
   if (error) {
     console.error("deleteDocumentById document:", error);
@@ -639,16 +798,22 @@ export async function deleteDocumentById(id: string): Promise<boolean> {
 export async function createRelations(
   newDocId: string,
   allDocs: DocumentSummary[],
-  meta: DocMeta
+  meta: DocMeta,
+  workspaceId = DEFAULT_WORKSPACE_ID
 ): Promise<void> {
   if (!meta.isDocument || !meta.serviceName || allDocs.length === 0) return;
+  const resolvedWorkspaceId = normalizeWorkspaceId(workspaceId);
 
   const sameService = allDocs.filter(
-    (d) => d.meta.serviceName === meta.serviceName && d.id !== newDocId
+    (d) =>
+      (d.workspaceId ?? resolvedWorkspaceId) === resolvedWorkspaceId &&
+      d.meta.serviceName === meta.serviceName &&
+      d.id !== newDocId
   );
   if (sameService.length === 0) return;
 
   const relations = sameService.map((d) => ({
+    workspace_id: resolvedWorkspaceId,
     from_doc: newDocId,
     to_doc: d.id,
     relation_type: "linked_service",
@@ -657,6 +822,19 @@ export async function createRelations(
   const { error } = await getSupabaseAdmin()
     .from("doc_relations")
     .upsert(relations, { onConflict: "from_doc,to_doc,relation_type" });
+
+  if (error && isWorkspaceSchemaError(error)) {
+    const legacyRelations = sameService.map((d) => ({
+      from_doc: newDocId,
+      to_doc: d.id,
+      relation_type: "linked_service",
+    }));
+    const legacy = await getSupabaseAdmin()
+      .from("doc_relations")
+      .upsert(legacyRelations, { onConflict: "from_doc,to_doc,relation_type" });
+
+    if (!legacy.error) return;
+  }
 
   if (error) console.error("createRelations:", error);
 }

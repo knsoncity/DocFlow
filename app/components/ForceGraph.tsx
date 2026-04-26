@@ -354,9 +354,13 @@ function drawFrame(
 export default function ForceGraph({
   docs,
   onOpenDoc,
+  accessToken,
+  workspaceId,
 }: {
   docs: DocumentSummary[];
   onOpenDoc: (doc: DocumentSummary) => void;
+  accessToken?: string;
+  workspaceId?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -374,11 +378,16 @@ export default function ForceGraph({
 
   // fetch relations
   useEffect(() => {
-    fetch("/api/relations")
+    fetch("/api/relations", {
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(workspaceId ? { "x-docflow-workspace-id": workspaceId } : {}),
+      },
+    })
       .then((r) => r.json())
       .then((data: { relations?: DocRelation[] }) => setRelations(data.relations ?? []))
       .catch(console.error);
-  }, []);
+  }, [accessToken, workspaceId]);
 
   // rebuild graph when docs or relations change
   useEffect(() => {

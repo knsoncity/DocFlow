@@ -164,9 +164,13 @@ function ScheduleForm({
 function BulkDueDatePanel({
   docs,
   onUpdated,
+  accessToken,
+  workspaceId,
 }: {
   docs: DocumentSummary[];
   onUpdated: (id: string, dueDate: string) => void;
+  accessToken?: string;
+  workspaceId?: string;
 }) {
   const noDue = docs.filter((d) => !d.meta.dueDate && d.meta.isDocument);
   const [saving, setSaving] = useState<string | null>(null);
@@ -179,7 +183,11 @@ function BulkDueDatePanel({
     try {
       await fetch(`/api/documents/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(workspaceId ? { "x-docflow-workspace-id": workspaceId } : {}),
+        },
         body: JSON.stringify({ dueDate }),
       });
       onUpdated(id, dueDate);
@@ -227,10 +235,14 @@ export default function TimelineView({
   docs: initialDocs,
   onOpenDoc,
   externalSchedules,
+  accessToken,
+  workspaceId,
 }: {
   docs: DocumentSummary[];
   onOpenDoc: (doc: DocumentSummary) => void;
   externalSchedules?: Schedule[];
+  accessToken?: string;
+  workspaceId?: string;
 }) {
   const [storedSchedules, setStoredSchedules] = useState<Schedule[]>([]);
   const [docDueDateOverrides, setDocDueDateOverrides] = useState<Record<string, string>>({});
@@ -240,6 +252,15 @@ export default function TimelineView({
   const [hovered, setHovered] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const buildAuthHeaders = useCallback(
+    (headers: Record<string, string> = {}) =>
+      ({
+        ...headers,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(workspaceId ? { "x-docflow-workspace-id": workspaceId } : {}),
+      }),
+    [accessToken, workspaceId]
+  );
 
   const docs = useMemo(
     () =>
@@ -267,11 +288,11 @@ export default function TimelineView({
 
   // fetch schedules on mount
   useEffect(() => {
-    fetch("/api/schedules")
+    fetch("/api/schedules", { headers: buildAuthHeaders() })
       .then((r) => r.json())
       .then((d: { schedules?: Schedule[] }) => setStoredSchedules(d.schedules ?? []))
       .catch(console.error);
-  }, []);
+  }, [buildAuthHeaders]);
 
   // scroll to today
   useEffect(() => {
@@ -289,7 +310,7 @@ export default function TimelineView({
     if (editId) {
       const res = await fetch(`/api/schedules/${editId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(data),
       });
       const json = (await res.json()) as { schedule?: Schedule };
@@ -299,7 +320,7 @@ export default function TimelineView({
     } else {
       const res = await fetch("/api/schedules", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(data),
       });
       const json = (await res.json()) as { schedule?: Schedule };
@@ -310,14 +331,17 @@ export default function TimelineView({
       }
     }
     setFormState(null);
-  }, []);
+  }, [buildAuthHeaders]);
 
   const deleteSchedule = useCallback(async (id: string) => {
     setDeletingId(id);
-    await fetch(`/api/schedules/${id}`, { method: "DELETE" });
+    await fetch(`/api/schedules/${id}`, {
+      method: "DELETE",
+      headers: buildAuthHeaders(),
+    });
     setStoredSchedules((prev) => prev.filter((s) => s.id !== id));
     setDeletingId(null);
-  }, []);
+  }, [buildAuthHeaders]);
 
   const handleDayClick = (day: Date) => {
     setFormDate(day.toISOString().slice(0, 10));
@@ -403,7 +427,12 @@ export default function TimelineView({
       )}
 
       {/* bulk due-date panel */}
-      <BulkDueDatePanel docs={docs} onUpdated={handleDocDueUpdated} />
+      <BulkDueDatePanel
+        docs={docs}
+        onUpdated={handleDocDueUpdated}
+        accessToken={accessToken}
+        workspaceId={workspaceId}
+      />
 
       {/* legend */}
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-[var(--border)] px-4 py-1.5">

@@ -16,6 +16,7 @@ export function getSupabaseAdmin() {
 
 export type DbDocument = {
   id: string;
+  workspace_id?: string | null;
   service_id: string | null;
   raw_content: string;
   doc_type: string | null;
@@ -33,12 +34,14 @@ export type DbDocument = {
 
 export type DbService = {
   id: string;
+  workspace_id?: string | null;
   name: string;
   created_at: string;
 };
 
 export type DbDocRelation = {
   id: string;
+  workspace_id?: string | null;
   from_doc: string;
   to_doc: string;
   relation_type: string;

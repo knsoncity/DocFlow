@@ -63,7 +63,7 @@ export default function DocCard({
       type="button"
       onClick={onClick}
       aria-label={`${title} 문서 열기`}
-      className="group relative grid h-full min-h-[304px] w-full grid-rows-[auto_auto_1fr_auto_auto] overflow-hidden rounded-[16px] border border-[var(--border)] bg-[var(--bg)] px-4 py-3.5 text-left transition-[border-color,box-shadow,transform] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className="group relative flex aspect-[4/5] min-h-[248px] max-h-[320px] w-full flex-col overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg)] px-3.5 py-3 text-left transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       style={{
         boxShadow: `inset 0 1px 0 ${categoryStyle.soft}`,
       }}
@@ -76,10 +76,10 @@ export default function DocCard({
         aria-hidden="true"
       />
 
-      <div className="flex items-start justify-between gap-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           <span
-            className="rounded-[10px] border px-2 py-0.5 text-[10px] font-medium tracking-[0.01em]"
+            className="max-w-[92px] truncate rounded-[9px] border px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.01em]"
             style={{
               borderColor: categoryStyle.stroke,
               backgroundColor: categoryStyle.soft,
@@ -89,15 +89,15 @@ export default function DocCard({
             {category}
           </span>
           {meta.isDocument && (
-            <span className={`rounded-[10px] border px-2 py-0.5 text-[10px] font-medium tracking-[0.01em] ${typeColor}`}>
+            <span className={`max-w-[92px] truncate rounded-[9px] border px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.01em] ${typeColor}`}>
               {typeLabel}
             </span>
           )}
-          <span className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[10px] font-medium tracking-[0.01em] text-[var(--text-subtle)]">
+          <span className="rounded-[9px] border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.01em] text-[var(--text-subtle)]">
             {healthLabel}
           </span>
           {policyBadge ? (
-            <span className="rounded-[10px] border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium tracking-[0.01em] text-sky-700">
+            <span className="max-w-[92px] truncate rounded-[9px] border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.01em] text-sky-700">
               {policyBadge}
             </span>
           ) : null}
@@ -105,9 +105,9 @@ export default function DocCard({
         <span className="shrink-0 pt-0.5 text-[10px] tracking-[0.01em] text-[var(--text-muted)]">{createdLabel}</span>
       </div>
 
-      <div className="mt-3 min-w-0">
+      <div className="mt-3.5 min-w-0">
         <h3
-          className="line-clamp-2 text-[14px] font-semibold leading-[1.34] tracking-[-0.022em] text-[var(--text)]"
+          className="line-clamp-2 text-[13.5px] font-semibold leading-[1.32] tracking-[-0.02em] text-[var(--text)]"
           title={title}
         >
           {title}
@@ -122,44 +122,50 @@ export default function DocCard({
         ) : null}
       </div>
 
-      <div className="mt-3 flex-1">
+      <div className="mt-3 min-h-0 flex-1">
         <p
-          className="line-clamp-4 text-[11.5px] leading-[1.72] tracking-[-0.01em] text-[var(--text-subtle)]"
+          className="line-clamp-3 text-[11px] leading-[1.62] tracking-[-0.006em] text-[var(--text-subtle)]"
           title={summary}
         >
           {summary}
         </p>
       </div>
 
-      <div className="mt-3 rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] tracking-[0.01em]">
-          <span className="font-medium text-[var(--text)]">{progressState}</span>
-          <span className="text-[var(--text-subtle)]">{scheduleSummary}</span>
-          <span className="text-[var(--text-muted)]">{dday ?? "D-day —"}</span>
+      <div className="mt-2.5 grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-y border-[var(--border)] py-2">
+        <div className="min-w-0">
+          <p className="truncate text-[10.5px] font-medium tracking-[0.01em] text-[var(--text)]" title={progressState}>
+            {progressState}
+          </p>
+          <p className="mt-0.5 truncate text-[10px] tracking-[0.01em] text-[var(--text-muted)]" title={scheduleSummary}>
+            {scheduleSummary}
+          </p>
         </div>
+        <span className="self-center rounded-[9px] border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-medium tracking-[0.01em] text-[var(--text-subtle)]">
+          {dday ?? "D-day —"}
+        </span>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-2.5">
-        <div className="flex flex-wrap gap-1">
+      <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap gap-1">
           {displayedKeywords.length > 0 ? (
             <>
               {displayedKeywords.map((kw) => (
                 <span
                   key={kw}
-                  className="max-w-[88px] truncate rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[10px] tracking-[0.01em] text-[var(--text-muted)]"
+                  className="max-w-[78px] truncate rounded-[9px] border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[9.5px] tracking-[0.01em] text-[var(--text-muted)]"
                   title={kw}
                 >
                   #{kw}
                 </span>
               ))}
               {keywordOverflow > 0 && (
-                <span className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[10px] tracking-[0.01em] text-[var(--text-muted)]">
+                <span className="rounded-[9px] border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[9.5px] tracking-[0.01em] text-[var(--text-muted)]">
                   +{keywordOverflow}
                 </span>
               )}
             </>
           ) : (
-            <span className="text-[10.5px] tracking-[0.01em] text-[var(--text-muted)]">태그 없음</span>
+            <span className="text-[10px] tracking-[0.01em] text-[var(--text-muted)]">태그 없음</span>
           )}
         </div>
         <span className="shrink-0 text-[10px] tracking-[0.01em] text-[var(--text-muted)]">
