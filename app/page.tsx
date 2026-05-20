@@ -17,6 +17,8 @@ import DocModal from "./components/DocModal";
 import GraphView from "./components/GraphView";
 import TimelineView from "./components/TimelineView";
 import { ToastContainer, ToastItem, ToastType } from "./components/Toast";
+import { WorkspaceMembersModal } from "./components/WorkspaceMembersModal";
+import { ConfluenceImportModal } from "./components/ConfluenceImportModal";
 import {
   DeliveryHealth,
   Document,
@@ -75,13 +77,13 @@ const MIN_CHAT_PANE_WIDTH = 340;
 const MAX_CHAT_PANE_WIDTH = 680;
 
 const TYPE_COLORS: Record<string, string> = {
-  PRD: "border-blue-500/30 bg-blue-500/10 text-blue-400",
-  화면정의서: "border-violet-500/30 bg-violet-500/10 text-violet-400",
-  플로우차트: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-  API명세: "border-orange-500/30 bg-orange-500/10 text-orange-400",
-  회의록: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
-  기타: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
-  참고자료: "border-zinc-500/30 bg-zinc-500/10 text-zinc-500",
+  PRD: "border-[#ffd0bf] bg-[#fff0e9] text-[#ff3e00]",
+  화면정의서: "border-[#b9e4ff] bg-[#eef8ff] text-[#0090ff]",
+  플로우차트: "border-[#aef0c6] bg-[#eafff2] text-[#00a83b]",
+  API명세: "border-[#ffe29a] bg-[#fff8df] text-[#d48f00]",
+  회의록: "border-[#ddd8d1] bg-[#f2f0ed] text-[#474645]",
+  기타: "border-[#e8e4de] bg-[#f8f7f4] text-[#848281]",
+  참고자료: "border-[#ddd8d1] bg-[#f2f0ed] text-[#474645]",
 };
 
 const SAVED_VIEW_PRESETS: SavedViewPreset[] = [
@@ -189,42 +191,44 @@ function AuthGate({
 }) {
   return (
     <main className="flex min-h-[100dvh] items-center justify-center bg-[var(--bg-subtle)] px-4 py-10 font-sans">
-      <section className="w-full max-w-[440px] overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--bg)] shadow-[var(--shadow-float)]">
+      <section className="w-full max-w-[400px] border border-[var(--border-strong)] bg-[var(--bg)] shadow-[var(--shadow-float)]">
+        {/* Header bar */}
         <div className="border-b border-[var(--border)] px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-[var(--text)] text-[13px] font-semibold text-[var(--bg)]">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[var(--text)] text-[12px] font-bold text-[var(--bg)]">
               D
             </div>
             <div>
-              <h1 className="text-[16px] font-semibold tracking-[-0.025em] text-[var(--text)]">DocFlow</h1>
-              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Private workspace</p>
+              <h1 className="text-[15px] font-semibold tracking-[-0.022em] text-[var(--text)]">DocFlow</h1>
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Private workspace</p>
             </div>
           </div>
-          <p className="mt-5 text-[13px] leading-[1.7] tracking-[-0.01em] text-[var(--text-subtle)]">
-            여러 사용자가 같은 MVP를 검증할 수 있도록 이메일 로그인 후 작업 공간에 진입합니다.
+          <p className="mt-4 text-[12.5px] leading-[1.65] text-[var(--text-subtle)]">
+            이메일로 로그인 링크를 받아 작업 공간에 진입합니다.
           </p>
         </div>
-        <form onSubmit={onSubmit} className="space-y-4 px-6 py-5">
+
+        <form onSubmit={onSubmit} className="space-y-3.5 px-6 py-5">
           <label className="block">
-            <span className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-subtle)]">이메일</span>
+            <span className="mb-1.5 block text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">이메일</span>
             <input
               type="email"
               required
               value={email}
               onChange={(event) => onEmailChange(event.target.value)}
               placeholder="name@company.com"
-              className="w-full rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="w-full rounded-full border border-[var(--border-strong)] bg-[var(--bg-subtle)] px-4 py-2.5 text-[13px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
             />
           </label>
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-[12px] bg-[var(--text)] px-4 py-2.5 text-[13px] font-semibold text-[var(--bg)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="w-full rounded-full bg-[var(--text)] px-4 py-2.5 text-[13px] font-semibold text-[var(--bg)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] focus-visible:ring-offset-2"
           >
-            {submitting ? "로그인 링크 전송 중" : "이메일 로그인 링크 받기"}
+            {submitting ? "전송 중…" : "로그인 링크 받기"}
           </button>
           {notice && (
-            <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-[11.5px] leading-[1.6] text-[var(--text-subtle)]">
+            <p className="border border-[var(--border)] bg-[var(--bg-subtle)] px-4 py-2.5 text-[11.5px] leading-[1.6] text-[var(--text-subtle)]">
               {notice}
             </p>
           )}
@@ -395,6 +399,8 @@ export default function Home() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(getStoredWorkspaceId);
   const [workspaceDraft, setWorkspaceDraft] = useState("");
   const [workspaceCreating, setWorkspaceCreating] = useState(false);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
+  const [confluenceImportOpen, setConfluenceImportOpen] = useState(false);
   const [themePreference, setThemePreference] = useState<ThemePreference>(getStoredThemePreference);
   const [themeDraft, setThemeDraft] = useState<ThemePreference>(getStoredThemePreference);
   const [chatPaneWidth, setChatPaneWidth] = useState(440);
@@ -875,12 +881,6 @@ export default function Home() {
   const toggleServiceCollapse = (key: string) => setCollapsedServices((prev) => ({ ...prev, [key]: !prev[key] }));
   const setAllServicesCollapsed = (collapsed: boolean) => setCollapsedServices(Object.fromEntries(serviceGroups.map((g) => [g.key, collapsed])));
 
-  const filterBtnClass = (active: boolean) =>
-    `rounded-[9px] border px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-      active
-        ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
-        : "border-[var(--border)] bg-[var(--bg)] text-[var(--text-subtle)] hover:border-[var(--border-strong)] hover:text-[var(--text)]"
-    }`;
 
   const confirmDocTitle = confirmDelete
     ? [confirmDelete.doc.meta.serviceName, confirmDelete.doc.meta.featureName].filter(Boolean).join(" · ") || "이 문서"
@@ -912,8 +912,8 @@ export default function Home() {
 
   if (authLoading) {
     return (
-      <main className="flex min-h-[100dvh] items-center justify-center bg-[var(--bg-subtle)] font-sans text-[13px] text-[var(--text-muted)]">
-        세션을 확인하는 중…
+      <main className="flex min-h-[100dvh] items-center justify-center bg-[var(--bg-subtle)] font-sans">
+        <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">확인 중…</span>
       </main>
     );
   }
@@ -954,90 +954,104 @@ export default function Home() {
       >
         {/* Header */}
         <div className="border-b border-[var(--border)] px-4 py-3.5 lg:px-5">
+          {/* Brand row */}
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-blue-600 text-[12px] font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)]">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center bg-[var(--text)] text-[11px] font-bold text-[var(--bg)]">
                 D
               </div>
               <div>
-                <h1 className="text-[15px] font-semibold tracking-[-0.022em] text-[var(--text)]">DocFlow</h1>
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">AI 기획 문서 관리</p>
+                <h1 className="text-[14px] font-semibold tracking-[-0.022em] text-[var(--text)]">DocFlow</h1>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">AI 기획 문서 관리</p>
               </div>
             </div>
             <button
               type="button"
               onClick={openSettings}
-              className="rounded-[12px] border border-[var(--border)] px-3 py-2 text-[11px] font-medium tracking-[0.01em] text-[var(--text-subtle)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[10.5px] font-medium tracking-[0.02em] text-[var(--text-subtle)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
             >
               설정
             </button>
           </div>
-          <div className="mt-3 rounded-[14px] border border-[var(--border)] bg-[var(--bg-subtle)] p-2">
-            <div className="grid gap-2">
-              <label className="block">
-                <span className="mb-1 block text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                  워크스페이스
-                </span>
-                <select
-                  value={selectedWorkspaceId}
-                  onChange={(event) => handleWorkspaceChange(event.target.value)}
-                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[11.5px] font-medium tracking-[-0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  aria-label="워크스페이스 선택"
-                >
-                  {workspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
-                <input
-                  type="text"
-                  value={workspaceDraft}
-                  onChange={(event) => setWorkspaceDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void handleCreateWorkspace();
-                    }
-                  }}
-                  placeholder="새 워크스페이스"
-                  className="min-w-0 rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[11px] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleCreateWorkspace()}
-                  disabled={!workspaceDraft.trim() || workspaceCreating}
-                  className="rounded-[10px] border border-[var(--border-strong)] bg-[var(--text)] px-2.5 py-1.5 text-[10.5px] font-semibold text-[var(--bg)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                >
-                  생성
-                </button>
-              </div>
+
+          {/* Workspace selector */}
+          <div className="mt-3.5 border-t border-[var(--border)] pt-3.5">
+            <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">워크스페이스</p>
+            <select
+              value={selectedWorkspaceId}
+              onChange={(event) => handleWorkspaceChange(event.target.value)}
+              className="w-full border-b border-[var(--border-strong)] bg-transparent pb-1.5 text-[12px] font-medium tracking-[-0.01em] text-[var(--text)] focus-visible:outline-none"
+              aria-label="워크스페이스 선택"
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+            <div className="mt-2 flex gap-1.5">
+              <input
+                type="text"
+                value={workspaceDraft}
+                onChange={(event) => setWorkspaceDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleCreateWorkspace();
+                  }
+                }}
+                placeholder="새 워크스페이스 이름"
+                className="min-w-0 flex-1 rounded-full border border-[var(--border-strong)] bg-[var(--bg-subtle)] px-3 py-1.5 text-[10.5px] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+              />
+              <button
+                type="button"
+                onClick={() => void handleCreateWorkspace()}
+                disabled={!workspaceDraft.trim() || workspaceCreating}
+                className="rounded-full bg-[var(--text)] px-3 py-1.5 text-[10.5px] font-semibold text-[var(--bg)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+              >
+                생성
+              </button>
+              <button
+                type="button"
+                onClick={() => setMembersModalOpen(true)}
+                disabled={!activeWorkspace}
+                className="rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[10.5px] font-medium text-[var(--text-subtle)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+                title="멤버 관리"
+              >
+                멤버
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfluenceImportOpen(true)}
+                disabled={!activeWorkspace}
+                className="rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[10.5px] font-medium text-[var(--text-subtle)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+                title="Confluence 페이지 가져오기"
+              >
+                Wiki
+              </button>
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <span className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
+
+          {/* Status strip */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--border)] pt-3">
+            <span className="text-[10px] tracking-[0.01em] text-[var(--text-muted)]">
               {effectiveAuthorName || "작성자 미설정"}
             </span>
-            {activeWorkspace && (
-              <span className="inline-flex max-w-full items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
-                <span className="truncate">{activeWorkspace.name}</span>
-              </span>
-            )}
+            <span className="text-[var(--border-strong)]">·</span>
+            <span className="text-[10px] tracking-[0.01em] text-[var(--text-muted)]">
+              문서 {docs.length}
+            </span>
+            <span className="text-[var(--border-strong)]">·</span>
+            <span className="text-[10px] tracking-[0.01em] text-[var(--text-muted)]">
+              서비스 {serviceCount}
+            </span>
             <button
               type="button"
               onClick={handleSignOut}
-              className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="ml-auto rounded-full border border-[var(--border-strong)] px-2.5 py-1 text-[9.5px] font-medium tracking-[0.04em] text-[var(--text-muted)] transition-colors hover:border-[var(--text)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
             >
               로그아웃
             </button>
-            <span className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
-              문서 {docs.length}개
-            </span>
-            <span className="inline-flex items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[10.5px] tracking-[0.01em] text-[var(--text-subtle)]">
-              서비스 {serviceCount}개
-            </span>
           </div>
         </div>
         <div className="flex-1 overflow-hidden">
@@ -1084,8 +1098,8 @@ export default function Home() {
       >
         {/* Toolbar */}
         <div className="border-b border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 lg:px-5 lg:py-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-1 rounded-[12px] border border-[var(--border)] bg-[var(--bg-subtle)] p-0.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5">
               {(["list", "graph", "timeline"] as Tab[]).map((t) => (
                 <button
                   key={t}
@@ -1093,21 +1107,18 @@ export default function Home() {
                   role="tab"
                   aria-selected={tab === t}
                   onClick={() => setTab(t)}
-                  className={`rounded-[10px] px-3 py-1.5 text-[11px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  className={`rounded-full border px-3.5 py-1.5 text-[10.5px] font-medium uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] ${
                     tab === t
-                      ? "bg-[var(--bg)] text-[var(--text)] shadow-sm"
-                      : "text-[var(--text-subtle)] hover:text-[var(--text)]"
+                      ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                      : "border-[var(--border-strong)] bg-transparent text-[var(--text-subtle)] hover:border-[var(--text)] hover:text-[var(--text)]"
                   }`}
                 >
-                  {t === "list" ? "문서 목록" : t === "graph" ? "관계도" : "타임라인"}
+                  {t === "list" ? "목록" : t === "graph" ? "관계도" : "타임라인"}
                 </button>
               ))}
             </div>
-            <h2 className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-subtle)] sm:block">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
               작업 공간
-            </h2>
-            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)] sm:hidden">
-              워크스페이스
             </p>
           </div>
         </div>
@@ -1116,118 +1127,107 @@ export default function Home() {
           {tab === "list" ? (
             <div className="h-full overflow-y-auto">
               {loading ? (
-                <div role="status" aria-live="polite" className="flex h-64 items-center justify-center gap-2 text-sm text-[var(--text-muted)]">
-                  <svg aria-hidden="true" className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                  <span>불러오는 중…</span>
+                <div role="status" aria-live="polite" className="flex h-64 items-center justify-center">
+                  <span className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">불러오는 중…</span>
                 </div>
               ) : docs.length === 0 ? (
-                <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-strong)] text-center">
-                  <p className="text-[13px] font-semibold text-[var(--text)]">문서가 없습니다</p>
-                  <p className="mt-1 text-[12px] text-[var(--text-muted)]">좌측 채팅창에 기획 문서를 붙여넣으면 자동 등록됩니다</p>
+                <div className="flex h-64 flex-col items-center justify-center border border-[var(--border)] text-center">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text)]">문서가 없습니다</p>
+                  <p className="mt-2 text-[11.5px] text-[var(--text-muted)]">좌측 채팅창에 기획 문서를 붙여넣으면 자동 등록됩니다</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <section className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 lg:px-3.5">
-                    <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                      <div className="grid min-w-0 gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                        <label className="relative min-w-0 w-full">
-                          <span className="sr-only">문서 검색</span>
-                          <svg aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-                          </svg>
-                          <input
-                            type="search"
-                            aria-label="문서 검색"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="문서, 서비스, 작성자, 키워드 검색"
-                            className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] py-2 pl-8 pr-3 text-[11.5px] tracking-[-0.01em] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                          />
-                        </label>
-                        <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-[10px] tracking-[0.01em] text-[var(--text-subtle)]">
-                          <span className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2 py-1 font-medium text-[var(--text)]">표시 {visibleDocs.length}</span>
-                          <span className="text-[var(--text-muted)]">전체 {docs.length}</span>
-                        </div>
+                  <section className="space-y-2 border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 lg:px-3.5">
+                    {/* Search row */}
+                    <div className="flex items-center gap-2">
+                      <label className="relative min-w-0 flex-1">
+                        <span className="sr-only">문서 검색</span>
+                        <svg aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                        </svg>
+                        <input
+                          type="search"
+                          aria-label="문서 검색"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="문서, 서비스, 작성자, 키워드"
+                          className="w-full rounded-full border border-[var(--border-strong)] bg-[var(--bg-subtle)] py-1.5 pl-8 pr-3 text-[11px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+                        />
+                      </label>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {([{ value: "card", label: "카드" }, { value: "compact", label: "리스트" }] as const).map((o) => (
+                          <button key={o.value} type="button" onClick={() => setViewMode(o.value)}
+                            className={`rounded-full border px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] ${
+                              viewMode === o.value
+                                ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                                : "border-[var(--border-strong)] text-[var(--text-muted)] hover:border-[var(--text)] hover:text-[var(--text)]"
+                            }`}
+                          >{o.label}</button>
+                        ))}
                       </div>
-
-                      <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-                        <div className="flex items-center gap-0.5 rounded-[10px] border border-[var(--border)] bg-[var(--bg)] p-0.5">
-                          {([{ value: "card", label: "카드" }, { value: "compact", label: "리스트" }] as const).map((o) => (
-                            <button key={o.value} type="button" onClick={() => setViewMode(o.value)}
-                              className={`rounded-[8px] px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                                viewMode === o.value ? "bg-[var(--bg-surface)] text-[var(--text)]" : "text-[var(--text-muted)] hover:text-[var(--text)]"
-                              }`}
-                            >{o.label}</button>
-                          ))}
-                        </div>
-                        <select
-                          value={sortMode}
-                          onChange={(e) => setSortMode(e.target.value as SortMode)}
-                          aria-label="정렬 기준"
-                          className="rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[10px] tracking-[0.01em] text-[var(--text-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        >
-                          <option value="latest">최신순</option>
-                          <option value="dueDate">일정순</option>
-                          <option value="dday">D-day순</option>
-                        </select>
-                      </div>
+                      <select
+                        value={sortMode}
+                        onChange={(e) => setSortMode(e.target.value as SortMode)}
+                        aria-label="정렬 기준"
+                        className="shrink-0 rounded-full border border-[var(--border-strong)] bg-[var(--bg-subtle)] px-3 py-1.5 text-[10px] font-medium text-[var(--text-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+                      >
+                        <option value="latest">최신순</option>
+                        <option value="dueDate">일정순</option>
+                        <option value="dday">D-day순</option>
+                      </select>
+                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{visibleDocs.length}/{docs.length}</span>
                     </div>
 
+                    {/* Category chips — dense documentation filter pattern */}
                     <div className="border-t border-[var(--border)] pt-2">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { setCategoryFilter("all"); setDetailFilter("all"); }}
+                          className={`rounded-full border px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] ${
+                            activeCategoryFilter === "all"
+                              ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                              : "border-[var(--border-strong)] text-[var(--text-subtle)] hover:border-[var(--text)] hover:text-[var(--text)]"
+                          }`}
+                        >
+                          전체 <span className="opacity-60">{toggleFilteredDocs.length}</span>
+                        </button>
                         {CATEGORY_ORDER.map((category) => {
-                          const style = CATEGORY_STYLES[category];
                           const active = activeCategoryFilter === category;
                           return (
                             <button
                               key={category}
                               type="button"
-                              onClick={() => {
-                                setCategoryFilter(category);
-                                setDetailFilter("all");
-                              }}
-                              className="rounded-[9px] border px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                              style={{
-                                borderColor: style.stroke,
-                                backgroundColor: active ? style.accent : style.soft,
-                                color: active ? "#ffffff" : style.accent,
-                              }}
+                              onClick={() => { setCategoryFilter(category); setDetailFilter("all"); }}
+                              className={`rounded-full border px-3 py-1.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] ${
+                                active
+                                  ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                                  : "border-[var(--border-strong)] text-[var(--text-subtle)] hover:border-[var(--text)] hover:text-[var(--text)]"
+                              }`}
                             >
-                              {category} {categoryCounts[category]}
+                              {category} <span className="opacity-60">{categoryCounts[category]}</span>
                             </button>
                           );
                         })}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCategoryFilter("all");
-                            setDetailFilter("all");
-                          }}
-                          className={filterBtnClass(activeCategoryFilter === "all")}
-                        >
-                          전체 {toggleFilteredDocs.length}
-                        </button>
                       </div>
                     </div>
 
+                    {/* Expand toggle */}
                     <div className="border-t border-[var(--border)] pt-1.5">
                       <button
                         type="button"
                         onClick={() => setFiltersExpanded((prev) => !prev)}
-                        className="flex w-full items-center justify-between gap-3 rounded-[10px] px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="flex w-full items-center justify-between gap-3 px-1 py-1 text-left transition-colors hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
                       >
                         <div className="min-w-0">
-                          <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">보기 옵션</p>
-                          <p className="mt-0.5 truncate text-[10px] tracking-[0.01em] text-[var(--text-subtle)]">
+                          <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">보기 옵션</p>
+                          <p className="mt-0.5 truncate text-[10px] text-[var(--text-subtle)]">
                             {activeSavedViewLabel} · {activeDetailFilter === "all" ? "세부 유형 전체" : activeDetailFilter} · {activeHealthLabel}
                           </p>
                         </div>
                         <svg
                           aria-hidden="true"
-                          className={`h-4 w-4 shrink-0 text-[var(--text-muted)] transition-transform ${filtersExpanded ? "rotate-180" : ""}`}
+                          className={`h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform ${filtersExpanded ? "rotate-180" : ""}`}
                           fill="none"
                           viewBox="0 0 24 24"
                           stroke="currentColor"
@@ -1238,94 +1238,80 @@ export default function Home() {
                       </button>
 
                       {filtersExpanded && (
-                        <div className="mt-2.5 space-y-2.5 border-t border-[var(--border)] pt-2.5">
+                        <div className="mt-2.5 space-y-3 border-t border-[var(--border)] pt-2.5">
                           <div>
-                            <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">저장된 보기</p>
-                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">저장된 보기</p>
+                            <div className="flex flex-wrap gap-1.5">
                               {SAVED_VIEW_PRESETS.map((preset) => {
-                                const category =
-                                  preset.category === "all" ? null : CATEGORY_STYLES[preset.category];
                                 const active = activeSavedView === preset.id;
                                 return (
                                   <button
                                     key={preset.id}
                                     type="button"
                                     onClick={() => applySavedView(preset)}
-                                    className="inline-flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1 text-[10px] font-medium tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                    style={{
-                                      borderColor: category ? category.stroke : "var(--border)",
-                                      backgroundColor: active ? category?.accent ?? "var(--text)" : "var(--bg)",
-                                      color: active ? "#ffffff" : category?.accent ?? "var(--text-subtle)",
-                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] ${
+                                      active
+                                        ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                                        : "border-[var(--border-strong)] text-[var(--text-subtle)] hover:border-[var(--text)] hover:text-[var(--text)]"
+                                    }`}
                                   >
                                     <span>{preset.label}</span>
-                                      <span className={`text-[9.5px] tracking-[0.01em] ${active ? "text-white/80" : "text-[var(--text-muted)]"}`}>
-                                        {countDocumentsForPreset(preset)}
-                                      </span>
-                                    </button>
+                                    <span className="opacity-50">{countDocumentsForPreset(preset)}</span>
+                                  </button>
                                 );
                               })}
                             </div>
                           </div>
 
                           <div>
-                            <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">기타 옵션</p>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              <label className="min-w-[168px]">
-                                <span className="sr-only">세부 유형 선택</span>
-                                <select
-                                  value={activeDetailFilter}
-                                  onChange={(e) => setDetailFilter(e.target.value)}
-                                  aria-label="세부 유형 선택"
-                                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[10px] tracking-[0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                >
-                                  <option value="all">세부 유형 전체 {categoryScopedDocs.length}</option>
-                                  {detailOptions.map((type) => (
-                                    <option key={type} value={type}>
-                                      {type} {detailCounts[type]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="min-w-[148px]">
-                                <span className="sr-only">상태 선택</span>
-                                <select
-                                  value={healthFilter}
-                                  onChange={(e) => setHealthFilter(e.target.value as DeliveryHealth | "all")}
-                                  aria-label="상태 선택"
-                                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[10px] tracking-[0.01em] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                >
-                                  <option value="all">상태 전체 {detailScopedDocs.length}</option>
-                                  {(["red", "yellow", "green", "gray"] as const).map((value) => (
-                                    <option key={value} value={value}>
-                                      {getHealthLabel(value)} {healthCounts[value]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <button type="button" onClick={() => setShowMineOnly((p) => !p)} disabled={!effectiveAuthorName}
-                                className={filterBtnClass(showMineOnly)}
-                              >내 문서 {mineDocsCount}</button>
-                              <button type="button" onClick={() => setHideCompleted((p) => !p)}
-                                className={filterBtnClass(hideCompleted)}
-                              >완료 숨기기 {completedCount}</button>
-                              <button type="button" onClick={() => setHideReferences((p) => !p)}
-                                className={filterBtnClass(hideReferences)}
-                              >참고자료 숨기기 {referenceCount}</button>
+                            <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">기타 옵션</p>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <select
+                                value={activeDetailFilter}
+                                onChange={(e) => setDetailFilter(e.target.value)}
+                                aria-label="세부 유형 선택"
+                                className="rounded-full border border-[var(--border-strong)] bg-[var(--bg-subtle)] px-3 py-1.5 text-[10px] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+                              >
+                                <option value="all">세부 유형 전체 {categoryScopedDocs.length}</option>
+                                {detailOptions.map((type) => (
+                                  <option key={type} value={type}>{type} {detailCounts[type]}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={healthFilter}
+                                onChange={(e) => setHealthFilter(e.target.value as DeliveryHealth | "all")}
+                                aria-label="상태 선택"
+                                className="rounded-full border border-[var(--border-strong)] bg-[var(--bg-subtle)] px-3 py-1.5 text-[10px] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
+                              >
+                                <option value="all">상태 전체 {detailScopedDocs.length}</option>
+                                {(["red", "yellow", "green", "gray"] as const).map((value) => (
+                                  <option key={value} value={value}>{getHealthLabel(value)} {healthCounts[value]}</option>
+                                ))}
+                              </select>
+                              {[
+                                { label: `내 문서 ${mineDocsCount}`, active: showMineOnly, onClick: () => setShowMineOnly((p) => !p), disabled: !effectiveAuthorName },
+                                { label: `완료 숨기기 ${completedCount}`, active: hideCompleted, onClick: () => setHideCompleted((p) => !p) },
+                                { label: `참고자료 숨기기 ${referenceCount}`, active: hideReferences, onClick: () => setHideReferences((p) => !p) },
+                              ].map((btn) => (
+                                <button key={btn.label} type="button" onClick={btn.onClick} disabled={btn.disabled}
+                                  className={`rounded-full border px-3 py-1.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)] disabled:cursor-not-allowed disabled:opacity-30 ${
+                                    btn.active
+                                      ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
+                                      : "border-[var(--border-strong)] text-[var(--text-subtle)] hover:border-[var(--text)] hover:text-[var(--text)]"
+                                  }`}
+                                >{btn.label}</button>
+                              ))}
                               <button type="button" onClick={() => setAllServicesCollapsed(true)}
-                                className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--text)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
                               >전체 접기</button>
                               <button type="button" onClick={() => setAllServicesCollapsed(false)}
-                                className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--text)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
                               >전체 펼치기</button>
                               {(activeCategoryFilter !== "all" || activeDetailFilter !== "all") && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setCategoryFilter("all");
-                                    setDetailFilter("all");
-                                  }}
-                                  className="rounded-[9px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  onClick={() => { setCategoryFilter("all"); setDetailFilter("all"); }}
+                                  className="rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[10px] text-[var(--text-subtle)] transition-colors hover:border-[var(--text)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text)]"
                                 >
                                   분류 초기화
                                 </button>
@@ -1555,6 +1541,37 @@ export default function Home() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Workspace Members Modal */}
+      {activeWorkspace && authUser && authAccessToken && (
+        <WorkspaceMembersModal
+          open={membersModalOpen}
+          workspaceId={activeWorkspace.id}
+          workspaceName={activeWorkspace.name}
+          currentUserId={authUser.id}
+          currentUserRole={activeWorkspace.role}
+          authToken={authAccessToken}
+          onClose={() => setMembersModalOpen(false)}
+        />
+      )}
+
+      {/* Confluence Import Modal */}
+      {activeWorkspace && authAccessToken && (
+        <ConfluenceImportModal
+          open={confluenceImportOpen}
+          workspaceId={activeWorkspace.id}
+          accessToken={authAccessToken}
+          onImported={(newDocs) => {
+            setDocs((prev) => {
+              const existingIds = new Set(prev.map((d) => d.id));
+              return [...newDocs.filter((d) => !existingIds.has(d.id)), ...prev];
+            });
+            showToast("success", `${newDocs.length}개 문서를 가져왔습니다.`);
+            setConfluenceImportOpen(false);
+          }}
+          onClose={() => setConfluenceImportOpen(false)}
+        />
       )}
 
       {/* Delete Confirm Modal */}
